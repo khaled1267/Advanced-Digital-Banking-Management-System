@@ -1,0 +1,16 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
+import { Provider } from "react-redux";
+import { AuthSession } from "@/components/AuthSession";
+import { makeStore, type AppStore } from "@/store/store";
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const [store] = useState<AppStore>(makeStore);
+
+  return (
+    <Provider store={store}>
+      <AuthSession>{children}</AuthSession>
+    </Provider>
+  );
+}
