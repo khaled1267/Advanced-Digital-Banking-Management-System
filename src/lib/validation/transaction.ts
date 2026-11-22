@@ -8,7 +8,7 @@ export const transactionQuerySchema = z
     status: z.enum(TRANSACTION_STATUSES).optional(),
     startDate: z.iso.date().optional(),
     endDate: z.iso.date().optional(),
-    page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+    page: z.coerce.number().int().min(1).max(1_000).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(10),
   })
   .refine(

@@ -1,4 +1,5 @@
 import mongoose, { Schema, type InferSchemaType } from "mongoose";
+import { parseBdtPaisa } from "@/lib/bdt-money";
 
 export const ACCOUNT_TYPES = ["SAVINGS", "CURRENT"] as const;
 export const ACCOUNT_STATUSES = ["ACTIVE", "INACTIVE", "FROZEN", "CLOSED"] as const;
@@ -33,7 +34,8 @@ const bankAccountSchema = new Schema(
       default: () => mongoose.Types.Decimal128.fromString("0.00"),
       validate: {
         validator(value: mongoose.Types.Decimal128) {
-          return /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value.toString());
+          const balancePaisa = parseBdtPaisa(value.toString());
+          return balancePaisa !== null && balancePaisa >= BigInt("0");
         },
         message: "Balance must be non-negative and use at most two decimal places.",
       },

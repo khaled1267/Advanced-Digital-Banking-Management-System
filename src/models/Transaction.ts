@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType } from "mongoose";
 import { generateTransactionId } from "@/lib/transaction-id";
+import { isPositiveBdtDecimal } from "@/lib/bdt-money";
 
 export const TRANSACTION_TYPES = [
   "DEPOSIT",
@@ -14,13 +15,6 @@ export const TRANSACTION_STATUSES = [
   "FAILED",
   "REVERSED",
 ] as const;
-
-function isPositiveDecimal(value: mongoose.Types.Decimal128) {
-  const match = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(value.toString());
-  if (!match || match[1] === "-") return false;
-  const coefficient = `${match[2]}${match[3] ?? ""}`.replace(/^0+/, "");
-  return coefficient.length > 0 && BigInt(coefficient) > BigInt("0");
-}
 
 const transactionSchema = new Schema(
   {
@@ -46,11 +40,19 @@ const transactionSchema = new Schema(
       ref: "BankAccount",
       default: undefined,
     },
+    loanId: {
+      type: Schema.Types.ObjectId,
+      ref: "Loan",
+      immutable: true,
+      default: undefined,
+    },
     amount: {
       type: Schema.Types.Decimal128,
       required: true,
       validate: {
-        validator: isPositiveDecimal,
+        validator(value: mongoose.Types.Decimal128) {
+          return isPositiveBdtDecimal(value.toString());
+        },
         message: "Transaction amount must be greater than zero.",
       },
     },
@@ -91,6 +93,14 @@ transactionSchema.index({ fromAccount: 1, createdAt: -1 });
 transactionSchema.index({ toAccount: 1, createdAt: -1 });
 transactionSchema.index({ status: 1, createdAt: -1 });
 transactionSchema.index({ transactionType: 1, createdAt: -1 });
+transactionSchema.index(
+  { loanId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { loanId: { $type: "objectId" } },
+    name: "unique_loan_disbursement",
+  },
+);
 transactionSchema.index(
   { createdBy: 1, idempotencyKey: 1 },
   {

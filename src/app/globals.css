@@ -26,3 +26,328 @@ a {
   background: #d1fae5;
   color: var(--navy);
 }
+
+@keyframes dashboard-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dashboard-row-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 5px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dashboard-shimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+.dashboard-route-enter,
+.dashboard-reveal,
+.dashboard-content-enter {
+  animation: dashboard-enter 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.dashboard-reveal {
+  animation-delay: var(--dashboard-delay, 0ms);
+}
+
+.dashboard-row-enter {
+  animation: dashboard-row-enter 240ms ease-out both;
+  animation-delay: var(--dashboard-delay, 0ms);
+}
+
+.dashboard-card-hover {
+  transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms ease-out;
+}
+
+.dashboard-skeleton {
+  background-image: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 7%) 45%, transparent 70%);
+  background-size: 220% 100%;
+  animation: dashboard-shimmer 1.5s ease-in-out infinite;
+}
+
+.dashboard-root {
+  --dashboard-bg: #050610;
+  --dashboard-sidebar: #080916;
+  --dashboard-surface: #101323;
+  --dashboard-surface-soft: #14182b;
+  --dashboard-border-color: rgb(178 181 202 / 12%);
+  --dashboard-text: #eef0fa;
+  --dashboard-muted: #9ba1bd;
+  --dashboard-chart-grid: rgb(178 181 202 / 14%);
+  --dashboard-chart-label: #9ba1bd;
+  --dashboard-chart-primary: #8291ff;
+  --dashboard-chart-secondary: #6dd9cf;
+  --dashboard-tooltip-bg: #111629;
+  --dashboard-skeleton: rgb(255 255 255 / 4%);
+  min-width: 0;
+  color: var(--dashboard-text);
+  background-color: var(--dashboard-bg);
+  transition: color 220ms ease, background-color 220ms ease;
+}
+
+.dashboard-sidebar,
+.dashboard-header,
+.dashboard-root [class~="bg-[#10182b]"],
+.dashboard-root [class~="bg-white/[0.02]"],
+.dashboard-root [class~="bg-white/[0.04]"] {
+  transition: color 220ms ease, background-color 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.dashboard-nav-active {
+  color: #f8f9ff;
+  background: linear-gradient(100deg, rgb(27 38 142 / 46%), rgb(19 28 88 / 24%));
+  box-shadow: inset 0 0 0 1px rgb(100 107 162 / 20%);
+}
+
+.dashboard-featured {
+  min-height: 168px;
+}
+
+.dashboard-root [role="dialog"],
+.dashboard-root [role="alertdialog"] {
+  animation: dashboard-modal-enter 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes dashboard-modal-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 5px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+html[data-theme="light"] .dashboard-root {
+  --dashboard-bg: #f2f4fa;
+  --dashboard-sidebar: #ffffff;
+  --dashboard-surface: #ffffff;
+  --dashboard-surface-soft: #f7f8fc;
+  --dashboard-border-color: #e1e5f0;
+  --dashboard-text: #10152f;
+  --dashboard-muted: #69718d;
+  --dashboard-chart-grid: #e4e8f2;
+  --dashboard-chart-label: #68718d;
+  --dashboard-chart-primary: #1b268e;
+  --dashboard-chart-secondary: #087e91;
+  --dashboard-tooltip-bg: #ffffff;
+  --dashboard-skeleton: #edf0f7;
+}
+
+html[data-theme="light"] .dashboard-root [class~="bg-[#080c18]"],
+html[data-theme="light"] .dashboard-root [class~="bg-[#080c18]/90"],
+html[data-theme="light"] .dashboard-root [class~="bg-[#050610]"],
+html[data-theme="light"] .dashboard-root [class~="bg-[#050610]/90"] {
+  background-color: var(--dashboard-bg);
+}
+
+html[data-theme="light"] .dashboard-sidebar,
+html[data-theme="light"] .dashboard-root [class~="bg-[#0b1120]"],
+html[data-theme="light"] .dashboard-root [class~="bg-[#080916]"],
+html[data-theme="light"] .dashboard-root [class~="bg-[#10182b]"] {
+  background-color: var(--dashboard-surface);
+}
+
+html[data-theme="light"] .dashboard-root [class~="bg-white/[0.02]"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/[0.025]"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/[0.03]"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/[0.04]"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/[0.06]"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/[0.07]"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/5"],
+html[data-theme="light"] .dashboard-root [class~="bg-white/10"] {
+  background-color: var(--dashboard-surface-soft);
+}
+
+html[data-theme="light"] .dashboard-header {
+  background-color: rgb(255 255 255 / 94%);
+  border-color: var(--dashboard-border-color);
+}
+
+html[data-theme="light"] .dashboard-protected-card {
+  border-color: var(--dashboard-border-color);
+  background: linear-gradient(140deg, #f5f7ff, #e9edfb);
+}
+
+html[data-theme="light"] .dashboard-sidebar,
+html[data-theme="light"] .dashboard-root [class*="border-white/"] {
+  border-color: var(--dashboard-border-color);
+}
+
+html[data-theme="light"] .dashboard-root [class*="divide-white/"] > :not(:last-child) {
+  border-color: var(--dashboard-border-color);
+}
+
+html[data-theme="light"] .dashboard-root [class~="text-slate-100"],
+html[data-theme="light"] .dashboard-root [class~="text-slate-200"],
+html[data-theme="light"] .dashboard-root [class~="text-slate-300"] {
+  color: #121832;
+}
+
+html[data-theme="light"] .dashboard-root [class~="text-slate-400"],
+html[data-theme="light"] .dashboard-root [class~="text-slate-500"],
+html[data-theme="light"] .dashboard-root [class~="text-slate-600"],
+html[data-theme="light"] .dashboard-root [class~="text-slate-700"] {
+  color: #69718d;
+}
+
+html[data-theme="light"] .dashboard-featured {
+  color: #121832;
+  border-color: #d8def2;
+  background: linear-gradient(120deg, #ffffff 0%, #eef1ff 55%, #e5eaff 100%);
+  box-shadow: 0 18px 42px rgb(28 43 112 / 10%);
+}
+
+html[data-theme="light"] .dashboard-featured [class~="text-white"],
+html[data-theme="light"] .dashboard-featured [class~="text-blue-100/80"] {
+  color: #131c58;
+}
+
+html[data-theme="light"] .dashboard-brand-name {
+  color: #131c58;
+}
+
+html[data-theme="light"] .dashboard-account-balance {
+  color: #131c58;
+}
+
+html[data-theme="light"] .dashboard-featured [class~="text-blue-100/70"] {
+  color: #545d84;
+}
+
+html[data-theme="light"] .dashboard-featured [class~="bg-white/10"] {
+  color: #1b268e;
+  background-color: #e1e7ff;
+}
+
+html[data-theme="light"] .dashboard-root .dashboard-nav-active {
+  color: #1b268e;
+  background: #eef1ff;
+  box-shadow: inset 0 0 0 1px #dce2fb;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-blue-400/"] {
+  background-color: #edf0ff;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-cyan-400/"] {
+  background-color: #e7f6f7;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-emerald-300/"] {
+  background-color: #eaf7f1;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-emerald-400/"] {
+  background-color: #eaf7f1;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-amber-300/"] {
+  background-color: #fff4df;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-amber-400/"] {
+  background-color: #fff4df;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-rose-300/"] {
+  background-color: #fff0f0;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-rose-400/"] {
+  background-color: #fff0f0;
+}
+
+html[data-theme="light"] .dashboard-root [class*="bg-indigo-400/"] {
+  background-color: #eff0ff;
+}
+
+html[data-theme="light"] .dashboard-root [class*="text-blue-"] {
+  color: #263893;
+}
+
+html[data-theme="light"] .dashboard-root [class*="text-cyan-"] {
+  color: #087e91;
+}
+
+html[data-theme="light"] .dashboard-root [class*="text-emerald-"] {
+  color: #08784d;
+}
+
+html[data-theme="light"] .dashboard-root [class*="text-amber-"] {
+  color: #986000;
+}
+
+html[data-theme="light"] .dashboard-root [class*="text-rose-"] {
+  color: #b4232d;
+}
+
+html[data-theme="light"] .dashboard-root [class*="text-indigo-"] {
+  color: #3944a2;
+}
+
+html[data-theme="light"] .dashboard-root [class*="hover:bg-white/"]:hover {
+  background-color: #f0f2f8;
+}
+
+html[data-theme="light"] .dashboard-root .dashboard-card-hover:hover {
+  box-shadow: 0 18px 38px rgb(25 37 84 / 10%);
+}
+
+html[data-theme="light"] .dashboard-root .dashboard-skeleton {
+  background-image: linear-gradient(100deg, transparent 20%, rgb(100 107 162 / 12%) 45%, transparent 70%);
+}
+
+html[data-theme="light"] .dashboard-root select,
+html[data-theme="light"] .dashboard-root input,
+html[data-theme="light"] .dashboard-root textarea {
+  color-scheme: light;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .dashboard-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 38px rgb(0 0 0 / 18%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-route-enter,
+  .dashboard-reveal,
+  .dashboard-content-enter,
+  .dashboard-row-enter,
+  .dashboard-skeleton,
+  .dashboard-root [role="dialog"],
+  .dashboard-root [role="alertdialog"] {
+    animation: none !important;
+  }
+
+  .dashboard-card-hover,
+  .dashboard-interactive,
+  .dashboard-shell a,
+  .dashboard-shell button {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .dashboard-root,
+  .dashboard-root * {
+    transition-duration: 0.01ms !important;
+  }
+}

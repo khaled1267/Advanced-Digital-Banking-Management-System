@@ -16,7 +16,7 @@ export const adminAccountsQuerySchema = z.strictObject({
   search: z.string().trim().max(100).optional(),
   accountType: z.enum(ACCOUNT_TYPES).optional(),
   status: z.enum(ACCOUNT_STATUSES).optional(),
-  page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+  page: z.coerce.number().int().min(1).max(1_000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(10),
 });
 

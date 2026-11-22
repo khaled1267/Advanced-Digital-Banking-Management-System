@@ -14,7 +14,7 @@ export const createDepositSchema = z.strictObject({
 
 export const customerDepositsQuerySchema = z.strictObject({
   status: z.enum(DEPOSIT_STATUSES).optional(),
-  page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+  page: z.coerce.number().int().min(1).max(1_000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(10),
 });
 
@@ -23,7 +23,7 @@ export const adminDepositsQuerySchema = z.strictObject({
   status: z.enum(DEPOSIT_STATUSES).optional(),
   startDate: dateSchema.optional(),
   endDate: dateSchema.optional(),
-  page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+  page: z.coerce.number().int().min(1).max(1_000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(10),
 }).refine(
   (query) => !query.startDate || !query.endDate || query.startDate <= query.endDate,
