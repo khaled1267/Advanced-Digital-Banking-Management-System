@@ -1,0 +1,543 @@
+# Northstar — Digital Banking Management System
+
+A role-based digital banking management system built as a full-stack web application. Northstar provides customer banking workflows and separate tools for Staff and Admin users. It is designed as an educational/demo banking platform; it is **not connected to a real bank, payment network, or live payment gateway**.
+
+> **Project status:** Core application features and the public landing page have been implemented. Deployment, live Cloudinary avatar uploads, and full MongoDB integration-test verification still require environment setup and end-to-end testing. Do not use this application to store real customer data or process real money.
+
+---
+
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Application Features](#application-features)
+- [User Roles & Permissions](#user-roles--permissions)
+- [Redux Toolkit Architecture](#redux-toolkit-architecture)
+- [RTK Query Implementation](#rtk-query-implementation)
+- [Authentication Strategy](#authentication-strategy)
+- [Transaction Processing Logic](#transaction-processing-logic)
+- [Database Structure](#database-structure)
+- [Security Implementation](#security-implementation)
+- [Environment Variables](#environment-variables)
+- [Local Setup Instructions](#local-setup-instructions)
+- [Deployment Instructions](#deployment-instructions)
+- [Demo Credentials](#demo-credentials)
+- [Testing & Known Limitations](#testing--known-limitations)
+
+---
+
+## Project Overview
+
+**Northstar** is a digital banking management application with three user roles: Customer, Staff, and Admin. Each role receives a separate dashboard and role-appropriate access to banking operations.
+
+The application uses the Next.js App Router for the web interface and server-side API routes. MongoDB with Mongoose stores application data. Redux Toolkit and RTK Query manage client-side application and server-data state.
+
+### Technology Stack
+
+| Area | Technology |
+|---|---|
+| Framework | Next.js App Router |
+| Language | TypeScript |
+| UI | React, Tailwind CSS |
+| Client state | Redux Toolkit |
+| API data fetching and caching | RTK Query |
+| Database | MongoDB / MongoDB Atlas |
+| ODM | Mongoose |
+| Validation | Zod |
+| Authentication | JWT in HTTP-only cookies |
+| Password hashing | Argon2id |
+| Charts | Recharts |
+| PDF statements | PDFKit |
+| Profile image storage | Cloudinary integration (credentials required) |
+| Deployment target | Vercel |
+
+---
+
+## Application Features
+
+### Public Website
+
+- Public business-banking landing page at `/`.
+- Responsive navigation and mobile menu.
+- Product and banking feature presentation.
+- Illustrative banking dashboard preview. Any displayed preview balances or transactions are sample data, not live account records.
+- Customer, Staff, and Admin role overview.
+- Security information and calls to action.
+- Light and dark visual themes for the public landing page.
+
+### Customer Banking
+
+- Customer registration and login.
+- Customer dashboard and account overview.
+- View owned bank accounts and their status.
+- Submit deposit and withdrawal requests through the application's configured approval workflow.
+- Initiate eligible fund transfers.
+- View transaction history.
+- Apply for loans and track loan status.
+- View loan repayment information and repayment history.
+- Download account statements in PDF and CSV formats.
+- View and edit supported profile information.
+- Profile picture upload, change, and removal through the Cloudinary integration, once Cloudinary credentials are configured.
+
+### Staff Operations
+
+- Register customers and assist with account creation.
+- Review relevant customer and account information.
+- Review deposit and withdrawal requests according to the configured workflow.
+- Review loan applications and forward them for Admin decision where the workflow requires it.
+- Access is restricted by Staff role permissions.
+
+### Admin Operations
+
+- Manage users and accounts within Admin permissions.
+- Review loan applications.
+- Approve or reject loan applications.
+- Handle loan disbursement workflows.
+- Review banking activity and operational information.
+
+### Account Statements
+
+- Generate PDF statements.
+- Generate CSV statements.
+- Apply supported account and date-range filters.
+- Enforce account ownership checks for Customer requests.
+
+### Interface Features
+
+- Separate Customer, Staff, and Admin dashboard experiences.
+- Shared dashboard shell and role-based navigation.
+- Responsive desktop and mobile navigation.
+- Expandable/collapsible sidebar.
+- Light and dark dashboard themes with saved preference.
+- Customer profile page with editable supported information.
+
+---
+
+## User Roles & Permissions
+
+| Capability | Customer | Staff | Admin |
+|---|:---:|:---:|:---:|
+| View own dashboard | Yes | Yes | Yes |
+| View own profile | Yes | Yes, subject to implemented profile access | Yes, subject to implemented profile access |
+| Register customers | No | Yes | As permitted by Admin workflow |
+| Create/manage customer bank accounts | No, unless a specific Customer workflow is enabled | Yes, according to Staff permissions | Yes |
+| View own accounts | Yes | Not applicable as a customer action | Not applicable as a customer action |
+| Submit deposit/withdrawal requests | Yes | No, unless explicitly allowed by workflow | Operational review/management |
+| Review deposit/withdrawal requests | No | Yes, according to assigned permissions | Yes, according to Admin permissions |
+| Initiate fund transfers | Yes, for eligible owned accounts | Not a Customer transfer action | Not a Customer transfer action |
+| Apply for a loan | Yes | No | No |
+| Review/forward loan applications | No | Yes | Yes |
+| Approve/reject loans | No | No | Yes |
+| Disburse approved loans | No | No | Yes, according to the loan workflow |
+| Access another customer's private data | No | Only where required and authorized for Staff duties | Only where permitted by Admin duties |
+
+All permissions must be enforced on the server. Hiding a button in the UI is not an authorization control.
+
+---
+
+## Redux Toolkit Architecture
+
+Redux Toolkit provides the client-side state foundation. The application uses a centralized Redux store and RTK Query for API-backed data.
+
+The architecture separates:
+
+1. **Application state** — UI or client state that needs to be shared across components.
+2. **Server state** — data retrieved from protected Next.js API routes, managed through RTK Query queries and mutations.
+3. **Authentication state** — the current authenticated-user data used by the dashboard and role-aware UI.
+
+The shared dashboard shell consumes the authenticated user and role information to display the correct navigation, profile details, and avatar. After profile updates, the relevant authentication/profile cache is refreshed so the updated information can appear without requiring a new login.
+
+Suggested data flow:
+
+```text
+React Component
+      |
+      v
+RTK Query Hook / Mutation
+      |
+      v
+Next.js Route Handler
+      |
+      v
+Authentication + Zod Validation
+      |
+      v
+Service / Mongoose Model
+      |
+      v
+MongoDB
+      |
+      v
+RTK Query Cache Update / Invalidation
+      |
+      v
+Updated React UI
+```
+
+Keep business rules and financial calculations on the server. Client state must never be treated as authoritative for balances, transaction outcomes, roles, or ownership.
+
+---
+
+## RTK Query Implementation
+
+RTK Query is used for API communication and server-state caching.
+
+Typical responsibilities include:
+
+- Fetching the authenticated user's information.
+- Fetching dashboard and account data.
+- Sending profile update requests.
+- Calling banking workflow endpoints.
+- Caching API responses.
+- Updating or invalidating relevant cached data after mutations.
+
+For authenticated requests, the browser sends the session cookie according to the application's cookie configuration. The server independently authenticates and authorizes each request.
+
+When adding a new API feature:
+
+1. Define or reuse a typed RTK Query endpoint.
+2. Call the endpoint from the relevant page/component.
+3. Handle loading, success, empty, and error states.
+4. Invalidate or update the correct cache after a successful mutation.
+5. Do not calculate or trust account balances in the browser.
+
+The current authentication API implementation includes `src/store/authApi.ts`. Follow the existing API slice and tag conventions when extending the store.
+
+---
+
+## Authentication Strategy
+
+The application uses a server-validated, cookie-based JWT authentication strategy.
+
+- Passwords are hashed with **Argon2id** before storage.
+- A signed JWT is issued after successful authentication.
+- The JWT is stored in an **HTTP-only cookie**, so client-side JavaScript cannot read the token directly.
+- Cookie settings include secure behavior in production and `SameSite=Lax`.
+- The server validates token signature and configured token claims such as expiry, issuer, and audience.
+- Protected requests validate the current user and role on the server.
+- The application checks that the user is still active before allowing protected access.
+- The authenticated-user endpoint is used to restore the current session when the application loads.
+- Logout clears the authentication cookie.
+
+Do not store passwords, password hashes, or JWT secrets in frontend state, browser storage, source code, or public environment variables.
+
+---
+
+## Transaction Processing Logic
+
+Financial operations are processed on the server. The frontend submits a request, but the server validates ownership, permissions, input, and current financial state before changing records.
+
+### Money Representation
+
+The project uses a BDT money utility (`src/lib/bdt-money.ts`) to avoid ordinary floating-point arithmetic for financial calculations. Amounts are handled in integer minor units (paisa) in application calculations, while MongoDB financial values use Decimal128 where configured by the models.
+
+Do not use JavaScript floating-point arithmetic as the source of truth for balances or transaction amounts.
+
+### Fund Transfer
+
+The transfer workflow is designed to:
+
+1. Authenticate the sender.
+2. Verify sender-account ownership and eligibility.
+3. Validate the recipient account and transfer amount.
+4. Check balance and applicable business rules.
+5. Debit the sender and credit the recipient atomically using MongoDB transaction support.
+6. Create the related transaction records.
+7. Apply idempotency protection to prevent duplicate processing of the same request.
+8. Return a result only after the operation has completed successfully.
+
+If a required operation fails inside the database transaction, the transaction should roll back rather than leave only one side of the transfer updated.
+
+### Deposits and Withdrawals
+
+Deposit and withdrawal requests follow an approval workflow. A request should not be represented as completed merely because a Customer submitted it. The applicable Staff/Admin action and the corresponding server-side financial operation determine the final state.
+
+- Deposit approval must update the applicable account/transaction state according to the existing workflow.
+- Withdrawal rejection must not debit the Customer's account.
+- Repeated approval/rejection requests must not process the same request more than once.
+
+### Loans and Repayments
+
+The loan workflow includes application, Staff review, Admin approval/rejection, disbursement, and repayment-related records.
+
+Loan approval and loan disbursement are different events. An approved loan should not be described as disbursed until the disbursement operation has actually completed.
+
+Loan repayment updates the account and loan balance and records the repayment/transaction using the application's atomic transaction logic where supported.
+
+### Transaction Types and Statuses
+
+The application has used transaction types including:
+
+- Deposit
+- Withdrawal
+- Fund Transfer
+- Loan Disbursement
+- Loan Repayment
+
+Transaction status values include:
+
+- Pending
+- Completed
+- Failed
+- Reversed
+
+Use the model enums and backend validation as the source of truth if these values are updated in the codebase.
+
+---
+
+## Database Structure
+
+MongoDB is accessed through Mongoose. The logical data entities in the application include:
+
+| Entity | Purpose |
+|---|---|
+| User | Authentication identity, role, active status, and supported profile fields |
+| Account | Customer-owned bank account details, account type, status, and balance |
+| Transaction | Financial activity and transaction status/type |
+| Deposit / Withdrawal workflow records | Requests and approval/rejection state, following the existing model design |
+| Loan | Loan application, review, decision, disbursement, and outstanding balance data |
+| Loan repayment records | Repayment history and related loan/account references |
+
+The exact MongoDB collection names are determined by the Mongoose model definitions and may differ from the logical names above. Inspect `src/models` before writing scripts or querying collections directly.
+
+### Database Configuration
+
+The project has used these database names during development:
+
+- Development/application database: `banking_management`
+- Dedicated integration-test database: `banking_management_task26_test`
+
+Set the values through environment variables. Never run tests against a production database. MongoDB transactions require a deployment topology that supports replica-set transactions; MongoDB Atlas supports this when the cluster is configured appropriately.
+
+---
+
+## Security Implementation
+
+Security measures implemented in the application include:
+
+- Argon2id password hashing.
+- Signed JWT authentication in HTTP-only cookies.
+- Secure cookie behavior in production and `SameSite=Lax`.
+- Server-side authentication and role checks.
+- Active-user validation on protected requests.
+- Zod request validation.
+- Customer account ownership checks.
+- Server-side financial calculations and balance validation.
+- MongoDB transaction use for supported atomic financial workflows.
+- Idempotency protections for supported financial operations.
+- Pagination limits and input validation in supported endpoints.
+- Sensitive credentials kept in environment variables rather than source code.
+- Cloudinary server-side signing for profile-image uploads; API secrets remain server-side.
+
+### Security Limitations to Review
+
+The prior security review identified areas that require further hardening, including login rate limiting and server-side JWT revocation/invalidation. A signed token may remain usable until its expiry unless the application has an additional revocation mechanism. Review these controls before any production use.
+
+This project is an educational/demo application and has not been independently security-certified or approved by a financial regulator.
+
+---
+
+## Environment Variables
+
+Create a local `.env.local` file in the project root. Never commit real credentials.
+
+| Variable | Required | Description |
+|---|:---:|---|
+| `MONGODB_URI` | Yes | MongoDB connection URI. Keep credentials private. |
+| `MONGODB_DATABASE` | Yes | Application database name; development has used `banking_management`. |
+| `JWT_SECRET` | Yes | Strong, private secret used by the authentication implementation. |
+| `MONGODB_TEST_DATABASE` | For integration tests | Dedicated test database; development has used `banking_management_task26_test`. |
+| `CLOUDINARY_CLOUD_NAME` | For profile image storage | Cloudinary cloud name. |
+| `CLOUDINARY_API_KEY` | For profile image storage | Cloudinary API key. |
+| `CLOUDINARY_API_SECRET` | For profile image storage | Cloudinary API secret. |
+
+Example template (replace placeholders with your own values):
+
+```env
+MONGODB_URI="mongodb+srv://<username>:<password>@<cluster-host>/"
+MONGODB_DATABASE="banking_management"
+JWT_SECRET="<generate-a-long-random-secret>"
+MONGODB_TEST_DATABASE="banking_management_task26_test"
+
+# Required to enable persistent profile-picture uploads
+CLOUDINARY_CLOUD_NAME=""
+CLOUDINARY_API_KEY=""
+CLOUDINARY_API_SECRET=""
+```
+
+Notes:
+
+- Use the actual variable names expected by the current source code and `.env.example`.
+- Do not paste secrets into README files, chat messages, screenshots, or Git commits.
+- Use a separate database for integration tests.
+- Configure the same required variables in Vercel Project Settings for each deployment environment.
+- Cloudinary avatar code requires valid Cloudinary credentials before live upload/change/remove can be verified.
+
+---
+
+## Local Setup Instructions
+
+### Prerequisites
+
+- Node.js version compatible with the project's `package.json` (the development environment has used Node.js 24.x).
+- npm.
+- A MongoDB deployment that supports the database operations used by the project. Use a dedicated development database.
+- Cloudinary account and API credentials if you want to test persistent profile-picture uploads.
+
+### 1. Clone the Repository
+
+```bash
+git clone <YOUR_GITHUB_REPOSITORY_URL>
+cd "Bank management system"
+```
+
+Replace the repository URL with the actual GitHub repository URL.
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+### 3. Configure Environment Variables
+
+Create `.env.local` in the project root and add the required values described in [Environment Variables](#environment-variables).
+
+Do not use production database credentials for local development or tests.
+
+### 4. Start the Development Server
+
+```bash
+npm run dev
+```
+
+Open:
+
+- Public website: `http://localhost:3000/`
+- Login: `http://localhost:3000/login`
+- Registration: `http://localhost:3000/register`
+- Customer profile: `http://localhost:3000/profile` (Customer authentication required)
+
+Other dashboard and API routes are protected according to their role and authentication requirements.
+
+### 5. Run Quality Checks
+
+Use the scripts available in `package.json`:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+If a script is not defined in the current `package.json`, use the available script name shown by:
+
+```bash
+npm run
+```
+
+### 6. Test Database Safety
+
+Before running integration tests:
+
+1. Confirm `MONGODB_TEST_DATABASE` points to a dedicated test database.
+2. Confirm the test setup cannot fall back to the development or production database.
+3. Use test-only users and accounts.
+4. Never run destructive cleanup against real banking data.
+
+---
+
+## Deployment Instructions
+
+The application is designed for deployment on Vercel. The deployment has not been confirmed as completed in the project status available for this README.
+
+### 1. Push the Project to GitHub
+
+Commit and push the reviewed project changes using your normal Git workflow. Before pushing, inspect the changes and confirm that `.env.local` and all real secrets are excluded by `.gitignore`.
+
+### 2. Import the Repository into Vercel
+
+1. Open [Vercel](https://vercel.com/).
+2. Create or select a Vercel project.
+3. Import the correct GitHub repository.
+4. Confirm the Next.js framework settings and project root directory.
+5. Add the required environment variables in **Settings → Environment Variables**.
+
+### 3. Configure MongoDB Atlas
+
+- Use a dedicated application database for the deployment.
+- Configure Atlas network access securely for the deployment environment.
+- Ensure the cluster topology supports transactions used by the application.
+- Do not use the test database for production traffic.
+
+### 4. Configure Cloudinary
+
+Add the following environment variables in Vercel if profile image uploads are required:
+
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+
+Keep the API secret server-side. Redeploy after changing environment variables.
+
+### 5. Deploy and Verify
+
+After deployment:
+
+1. Check the public landing page.
+2. Check login and registration.
+3. Verify each role's protected dashboard with its own test account.
+4. Verify profile update and avatar persistence if Cloudinary is configured.
+5. Test banking workflows only with isolated demo/test accounts and a non-production test environment.
+6. Review Vercel logs and browser console for errors.
+
+Use a Preview Deployment for initial verification. Do not test financial operations against real customer accounts or production data.
+
+---
+
+## Demo Credentials
+
+**No verified demo usernames or passwords were supplied for this project at the time this README was prepared.** Credentials are intentionally not fabricated or committed to source control.
+
+Create dedicated test users in a non-production environment and fill in this table before publishing the README or sharing the application with reviewers.
+
+| Role | Demo Email | Demo Password | Provisioning |
+|---|---|---|---|
+| Admin | `ADD_ADMIN_DEMO_EMAIL` | `ADD_ADMIN_DEMO_PASSWORD` | Create through the project's approved Admin provisioning/seed process. Do not make a public self-registration flow grant Admin privileges. |
+| Staff | `ADD_STAFF_DEMO_EMAIL` | `ADD_STAFF_DEMO_PASSWORD` | Create through the approved Admin/Staff provisioning process. |
+| Customer | `ADD_CUSTOMER_DEMO_EMAIL` | `ADD_CUSTOMER_DEMO_PASSWORD` | Register a dedicated demo Customer or create one using the approved development seed process. |
+
+**Before sharing demo access:**
+
+- Use only test data and a dedicated demo database.
+- Do not reuse personal, production, or administrator passwords.
+- Do not grant elevated roles through an untrusted client request.
+- Do not commit real credentials to GitHub. For public repositories, provide demo access through a controlled channel or a secure demo environment.
+- If demo credentials are not available, replace the placeholders with a clear instruction explaining how reviewers can request or create access.
+
+---
+
+## Testing & Known Limitations
+
+The latest project status reported the following checks as successful:
+
+- ESLint / lint check.
+- TypeScript check.
+- Production build.
+- `git diff --check` for the Cloudinary integration work.
+
+The automated test runner previously stopped during startup with an OS `userInfo()` / `uv_os_get_passwd` `ENOMEM` error. As a result, test assertions did not execute in that run. MongoDB integration tests and live financial workflows must not be described as fully verified based on lint, type checking, or a successful build alone.
+
+Additional items requiring configuration or verification:
+
+- Cloudinary environment variables must be configured before real profile-image upload/change/remove can be tested.
+- MongoDB Atlas connectivity and transaction-capable integration testing must be verified in the target environment.
+- Live Vercel deployment and Preview/Production environment variables must be configured and tested.
+- Demo credentials must be created for all three roles and inserted into the table above before distribution.
+- Login rate limiting and token revocation/invalidation should be reviewed and strengthened before any production deployment.
+
+---
+
+## Important Disclaimer
+
+Northstar is an educational/demo banking management project. It does not provide real banking services, connect to payment rails, or authorize real deposits, withdrawals, or transfers. Use synthetic accounts and test data only. Do not enter real customer information, card details, financial credentials, or production banking data.
