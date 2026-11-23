@@ -17,6 +17,15 @@ type Point = Record<string, string | number>;
 
 function amount(value: string) { return Number(value); }
 function chartDate(value: string) { return dateFormat.format(new Date(`${value}T00:00:00Z`)); }
+function exactBdt(value: string) {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!match) return "Unavailable";
+  return `BDT ${BigInt(match[1]).toLocaleString("en-BD")}.${(match[2] ?? "").padEnd(2, "0").slice(0, 2)}`;
+}
+
+function SummaryMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <article className="min-w-0 rounded-xl border border-white/[0.07] bg-[#10182b] px-4 py-3"><p className="text-[10px] font-medium text-slate-400">{label}</p><p className="mt-1 break-words text-lg font-semibold tracking-tight text-slate-100">{value}</p><p className="mt-1 text-[10px] text-slate-500">{detail}</p></article>;
+}
 
 function Panel({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return <section className="min-w-0 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#10182b] p-4 shadow-[0_12px_35px_rgba(0,0,0,0.12)] sm:p-5">
@@ -142,8 +151,20 @@ export function DashboardAnalytics({ role }: { role: DashboardRole }) {
     {request.isLoading ? <div className="grid gap-4 xl:grid-cols-2" role="status" aria-label="Loading analytics">{[0, 1, 2, 3].map((item) => <div key={item} className="dashboard-skeleton h-[330px] rounded-2xl border border-white/[0.07] bg-[#10182b]"/> )}</div>
       : request.isError ? <div role="alert" className="rounded-xl border border-rose-300/15 bg-rose-400/[0.06] px-4 py-4 text-xs text-rose-200">Could not load analytics. <button type="button" onClick={() => void request.refetch()} className="ml-1 font-semibold underline underline-offset-2">Try again</button></div>
         : !data ? <Empty/> : data.role !== dashboardRole ? <Empty>Analytics are unavailable for this role.</Empty>
-          : data.role === "ADMIN" ? <AdminCharts data={data}/>
+          : <>
+            {data.role === "ADMIN" && <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <SummaryMetric label="Total bank balance" value={exactBdt(data.summary.bankBalance)} detail="Combined stored account balances"/>
+              <SummaryMetric label="Successful deposits" value={exactBdt(data.summary.deposits)} detail={`${data.summary.depositCount.toLocaleString("en-BD")} completed records · all time`}/>
+              <SummaryMetric label="Successful withdrawals" value={exactBdt(data.summary.withdrawals)} detail={`${data.summary.withdrawalCount.toLocaleString("en-BD")} completed records · all time`}/>
+              <SummaryMetric label="Transaction records" value={data.summary.transactionCount.toLocaleString("en-BD")} detail="All stored transaction statuses"/>
+            </div>}
+            {data.role === "CUSTOMER" && <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              <SummaryMetric label="Successful deposits" value={exactBdt(data.summary.deposits)} detail={`${data.summary.depositCount.toLocaleString("en-BD")} of your completed records · all time`}/>
+              <SummaryMetric label="Successful withdrawals" value={exactBdt(data.summary.withdrawals)} detail={`${data.summary.withdrawalCount.toLocaleString("en-BD")} of your completed records · all time`}/>
+            </div>}
+            {data.role === "ADMIN" ? <AdminCharts data={data}/>
             : data.role === "CUSTOMER" ? <CustomerCharts data={data}/>
               : <StaffCharts data={data}/>}
+          </>}
   </section>;
 }

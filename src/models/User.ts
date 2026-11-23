@@ -2,6 +2,7 @@ import mongoose, { Schema, type InferSchemaType } from "mongoose";
 
 export const USER_ROLES = ["ADMIN", "STAFF", "CUSTOMER"] as const;
 export const USER_STATUSES = ["ACTIVE", "INACTIVE"] as const;
+export const CUSTOMER_VERIFICATION_STATUSES = ["PENDING", "VERIFIED", "REJECTED"] as const;
 
 const userSchema = new Schema(
   {
@@ -34,6 +35,24 @@ const userSchema = new Schema(
       required: true,
       select: false,
     },
+    transactionPinHash: {
+      type: String,
+      select: false,
+    },
+    transactionPinFailedAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+      select: false,
+    },
+    transactionPinFailureWindowStartedAt: {
+      type: Date,
+      select: false,
+    },
+    transactionPinLockedUntil: {
+      type: Date,
+      select: false,
+    },
     role: {
       type: String,
       enum: USER_ROLES,
@@ -45,6 +64,22 @@ const userSchema = new Schema(
       enum: USER_STATUSES,
       default: "ACTIVE",
       required: true,
+    },
+    verificationStatus: {
+      type: String,
+      enum: CUSTOMER_VERIFICATION_STATUSES,
+    },
+    verifiedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    verifiedAt: {
+      type: Date,
+    },
+    verificationNote: {
+      type: String,
+      trim: true,
+      maxlength: 500,
     },
   },
   { timestamps: true },

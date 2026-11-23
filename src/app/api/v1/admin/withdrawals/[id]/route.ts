@@ -57,6 +57,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (error.code === "NOT_FOUND") return errorResponse(404, "Withdrawal request not found.");
       if (error.code === "CONFLICT") return errorResponse(409, "This withdrawal request has already been processed.");
       if (error.code === "ACCOUNT_UNAVAILABLE") return errorResponse(409, "The associated account is no longer active.");
+      if (error.code === "MINIMUM_BALANCE") return errorResponse(409, "This withdrawal would go below the account's minimum balance. The request remains pending.");
       return errorResponse(409, "Insufficient available balance. The withdrawal request remains pending.");
     }
     return errorResponse(500, "Could not review the withdrawal request. No non-atomic fallback was attempted.");

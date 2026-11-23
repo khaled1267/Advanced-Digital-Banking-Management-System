@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { updateAccountStatusSchema } from "@/lib/validation/bank-account";
 import { BankAccount, type AccountStatus } from "@/models/BankAccount";
 import { User } from "@/models/User";
+import { serializeAccountTransactionLimits } from "@/lib/account-transaction-limits";
 import { isObjectIdOrHexString } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -28,10 +29,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     await connectToDatabase();
     const account = await BankAccount.findById(id)
-      .select("accountNumber userId accountType balance currency status createdAt updatedAt")
+      .select("accountNumber userId accountType balance currency status transactionLimits limitsUpdatedBy limitsUpdatedAt createdAt updatedAt")
       .lean();
     if (!account) return errorResponse(404, "Bank account not found.");
-    const holder = await User.findById(account.userId).select("name email").lean();
+    const [holder, limitsUpdater] = await Promise.all([
+      User.findById(account.userId).select("name email").lean(),
+      account.limitsUpdatedBy ? User.findById(account.limitsUpdatedBy).select("name").lean() : null,
+    ]);
     return NextResponse.json({
       status: "success",
       data: {
@@ -42,6 +46,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
           balance: account.balance.toString(),
           currency: account.currency,
           status: account.status,
+          transactionLimits: serializeAccountTransactionLimits(account.transactionLimits),
+          limitsUpdatedBy: limitsUpdater ? { id: account.limitsUpdatedBy?.toString(), name: limitsUpdater.name } : null,
+          limitsUpdatedAt: account.limitsUpdatedAt ?? null,
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
           accountHolder: holder
@@ -81,7 +88,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const account = current.status === nextStatus
       ? await BankAccount.findById(id)
-          .select("accountNumber userId accountType balance currency status createdAt updatedAt")
+          .select("accountNumber userId accountType balance currency status transactionLimits limitsUpdatedBy limitsUpdatedAt createdAt updatedAt")
           .lean()
       : await BankAccount.findOneAndUpdate(
           { _id: id, status: current.status },
@@ -101,6 +108,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           balance: account.balance.toString(),
           currency: account.currency,
           status: account.status,
+          transactionLimits: serializeAccountTransactionLimits(account.transactionLimits),
+          limitsUpdatedBy: account.limitsUpdatedBy?.toString() ?? null,
+          limitsUpdatedAt: account.limitsUpdatedAt ?? null,
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
           accountHolder: holder

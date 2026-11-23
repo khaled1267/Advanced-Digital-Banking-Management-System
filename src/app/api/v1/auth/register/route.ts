@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       email: result.data.email,
       passwordHash,
       role: "CUSTOMER",
+      verificationStatus: "PENDING",
     });
 
     return Response.json(

@@ -16,7 +16,7 @@ function dateKey() {
 
 export async function getAdminAnalytics(range: AnalyticsRange) {
   const date = { $gte: range.start, $lt: range.end };
-  const [trends, types, statuses, loans, repayments, accounts] = await Promise.all([
+  const [trends, types, statuses, loans, repayments, accounts, accountSummary, completedTotals, totalTransactions] = await Promise.all([
     Transaction.aggregate([
       { $match: { createdAt: date, status: "COMPLETED", transactionType: { $in: ["DEPOSIT", "WITHDRAWAL"] } } },
       { $group: { _id: { date: dateKey(), type: "$transactionType" }, amount: { $sum: "$amount" }, count: { $sum: 1 } } },
@@ -48,11 +48,29 @@ export async function getAdminAnalytics(range: AnalyticsRange) {
       { $group: { _id: { type: "$accountType", status: "$status" }, count: { $sum: 1 } } },
       { $sort: { "_id.type": 1, "_id.status": 1 } },
     ]),
+    BankAccount.aggregate([
+      { $group: { _id: null, count: { $sum: 1 }, balance: { $sum: "$balance" } } },
+    ]),
+    Transaction.aggregate([
+      { $match: { status: "COMPLETED", transactionType: { $in: ["DEPOSIT", "WITHDRAWAL"] } } },
+      { $group: { _id: "$transactionType", amount: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]),
+    Transaction.countDocuments(),
   ]);
+  const totalFor = (type: "DEPOSIT" | "WITHDRAWAL") => completedTotals.find((row) => row._id === type);
   const transactionStatuses = zero();
   for (const row of statuses) if (row._id in transactionStatuses) transactionStatuses[row._id as keyof typeof transactionStatuses] = row.count;
   return {
     role: "ADMIN" as const, range: range.key,
+    summary: {
+      accountCount: accountSummary[0]?.count ?? 0,
+      bankBalance: decimal(accountSummary[0]?.balance),
+      transactionCount: totalTransactions,
+      deposits: decimal(totalFor("DEPOSIT")?.amount),
+      depositCount: totalFor("DEPOSIT")?.count ?? 0,
+      withdrawals: decimal(totalFor("WITHDRAWAL")?.amount),
+      withdrawalCount: totalFor("WITHDRAWAL")?.count ?? 0,
+    },
     depositWithdrawal: trends.map((row) => ({ date: row._id.date, type: row._id.type, amount: decimal(row.amount), count: row.count })),
     transactionTypes: types.map((row) => ({ type: row._id.type, status: row._id.status, amount: decimal(row.amount), count: row.count })),
     transactionStatuses,
@@ -79,7 +97,7 @@ export async function getCustomerAnalytics(customerId: mongoose.Types.ObjectId, 
     ]),
   ]);
   const accountIds = ownedAccounts.map((account) => account._id);
-  const [flow, statusRows] = accountIds.length ? await Promise.all([
+  const [flow, statusRows, lifetimeTotals] = accountIds.length ? await Promise.all([
     Transaction.aggregate([
       { $match: { createdAt: { $gte: range.start, $lt: range.end }, status: "COMPLETED", $or: [{ fromAccount: { $in: accountIds } }, { toAccount: { $in: accountIds } }] } },
       { $group: {
@@ -105,11 +123,22 @@ export async function getCustomerAnalytics(customerId: mongoose.Types.ObjectId, 
       { $match: { createdAt: { $gte: range.start, $lt: range.end }, $or: [{ fromAccount: { $in: accountIds } }, { toAccount: { $in: accountIds } }] } },
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]),
-  ]) : [[], []];
+    Transaction.aggregate([
+      { $match: { status: "COMPLETED", transactionType: { $in: ["DEPOSIT", "WITHDRAWAL"] }, $or: [{ fromAccount: { $in: accountIds } }, { toAccount: { $in: accountIds } }] } },
+      { $group: { _id: "$transactionType", amount: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]),
+  ]) : [[], [], []];
+  const lifetimeTotal = (type: "DEPOSIT" | "WITHDRAWAL") => lifetimeTotals.find((row) => row._id === type);
   const transactionStatuses = zero();
   for (const row of statusRows) if (row._id in transactionStatuses) transactionStatuses[row._id as keyof typeof transactionStatuses] = row.count;
   return {
     role: "CUSTOMER" as const, range: range.key,
+    summary: {
+      deposits: decimal(lifetimeTotal("DEPOSIT")?.amount),
+      depositCount: lifetimeTotal("DEPOSIT")?.count ?? 0,
+      withdrawals: decimal(lifetimeTotal("WITHDRAWAL")?.amount),
+      withdrawalCount: lifetimeTotal("WITHDRAWAL")?.count ?? 0,
+    },
     cashFlow: flow.map((row) => ({ date: row._id, incoming: decimal(row.incoming), outgoing: decimal(row.outgoing), count: row.count, amount: decimal(row.amount) })),
     transactionStatuses,
     accounts: ownedAccounts.map((account) => ({ type: account.accountType, status: account.status, balance: decimal(account.balance) })),

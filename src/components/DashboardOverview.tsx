@@ -207,7 +207,6 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
     { label: "Pending deposits", value: String(managedDeposits.data?.data.summary.pending ?? 0), animationTarget: BigInt(managedDeposits.data?.data.summary.pending ?? 0), animationFormat: "integer", detail: "Requests awaiting review", icon: ArrowDownLeft, loading: managedDeposits.isLoading, error: managedDeposits.isError, accent: "cyan" },
     { label: "Pending withdrawals", value: String(managedWithdrawals.data?.data.summary.pending ?? 0), animationTarget: BigInt(managedWithdrawals.data?.data.summary.pending ?? 0), animationFormat: "integer", detail: "Requests awaiting review", icon: ArrowUpRight, loading: managedWithdrawals.isLoading, error: managedWithdrawals.isError, accent: "amber" },
     { label: "Loan applications", value: String(staffLoans.data?.data.total ?? 0), animationTarget: BigInt(staffLoans.data?.data.total ?? 0), animationFormat: "integer", detail: "Pending Staff review", icon: HandCoins, loading: staffLoans.isLoading, error: staffLoans.isError, accent: "violet" },
-    { label: "Pending transaction reviews", value: String(managedTransactions.data?.data.summary.pending ?? 0), animationTarget: BigInt(managedTransactions.data?.data.summary.pending ?? 0), animationFormat: "integer", detail: "Pending transaction records in the last 7 days", icon: Activity, loading: managedTransactions.isLoading, error: managedTransactions.isError, accent: "blue" },
   ];
 
   const actions: LinkAction[] = isCustomer ? [
@@ -217,6 +216,7 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
     { label: "Apply for a loan", description: "View or apply for a loan", icon: HandCoins, href: "/loans" },
     { label: "Account statements", description: "Review and download statements", icon: FileText, href: "/statements" },
   ] : role === "staff" ? [
+    { label: "Register customer", description: "Create a Customer login", icon: Users, href: "/staff/customers/new" },
     { label: "Deposit requests", description: "Review customer requests", icon: ArrowDownLeft, href: "/admin/deposits" },
     { label: "Withdrawal requests", description: "Review customer requests", icon: ArrowUpRight, href: "/admin/withdrawals" },
     { label: "Loan assistance", description: "Review and forward applications", icon: HandCoins, href: "/staff/loans" },

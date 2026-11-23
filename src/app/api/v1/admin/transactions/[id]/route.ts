@@ -23,8 +23,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (!transaction) {
       return NextResponse.json({ status: "error", message: "Transaction not found." }, { status: 404 });
     }
-    const safeTransaction = await getSafeTransaction(transaction);
-    return NextResponse.json({ status: "success", data: { transaction: safeTransaction } });
+    const safeTransaction = await getSafeTransaction(transaction, true);
+    return NextResponse.json({ status: "success", data: { transaction: safeTransaction } }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ status: "error", message: "Could not retrieve the transaction." }, { status: 500 });
   }

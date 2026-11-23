@@ -7,6 +7,9 @@ export type TransactionType =
   | "LOAN_DISBURSEMENT"
   | "LOAN_REPAYMENT";
 export type TransactionStatus = "PENDING" | "COMPLETED" | "FAILED" | "REVERSED";
+export type TransactionReviewStatus = "NOT_REVIEWED" | "UNDER_REVIEW" | "REVIEWED";
+export type SuspiciousFlagReason = "UNUSUAL_AMOUNT" | "UNUSUAL_ACTIVITY" | "DUPLICATE_PATTERN" | "ACCOUNT_CONCERN" | "OTHER";
+export type SuspiciousFlagStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED" | "DISMISSED";
 
 export type TransactionRecord = {
   id: string;
@@ -20,12 +23,16 @@ export type TransactionRecord = {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  review?: { status: TransactionReviewStatus; note: string | null; updatedAt: string | null; updatedBy: { id: string; name: string; role: string } | null };
+  suspiciousFlag?: { status: SuspiciousFlagStatus; active: boolean; reason: SuspiciousFlagReason; explanation: string | null; flaggedAt: string; flaggedBy: { id: string; name: string; role: string } | null } | null;
 };
 
 export type TransactionsQuery = {
   search?: string;
   transactionType?: TransactionType;
   status?: TransactionStatus;
+  reviewStatus?: TransactionReviewStatus;
+  suspiciousStatus?: "FLAGGED" | "CLEAR";
   startDate?: string;
   endDate?: string;
   page: number;

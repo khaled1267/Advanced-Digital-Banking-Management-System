@@ -3,6 +3,15 @@ import { nameSchema } from "@/lib/validation/user";
 
 export const profileUpdateSchema = z.strictObject({ name: nameSchema });
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+export const transactionPinUpdateSchema = z.strictObject({
+  newPin: z.string().regex(/^\d{6}$/, "Transaction PIN must contain exactly six digits."),
+  confirmPin: z.string().regex(/^\d{6}$/, "Confirmation must contain exactly six digits."),
+  currentPassword: z.string().min(1).max(256),
+}).refine((value) => value.newPin === value.confirmPin, {
+  message: "Transaction PIN entries do not match.",
+  path: ["confirmPin"],
+});
+export type TransactionPinUpdateInput = z.infer<typeof transactionPinUpdateSchema>;
 export const profileAvatarFinalizeSchema = z.strictObject({ publicId: z.string().trim().min(1).max(255) });
 
 export const PROFILE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;

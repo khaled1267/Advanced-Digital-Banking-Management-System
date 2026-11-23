@@ -4,6 +4,7 @@ export type AnalyticsRangeQuery = { range: "7d" | "30d" | "90d" | "custom"; star
 export type AnalyticsStatus = { status: string; count: number; approvedAmount: string; disbursedAmount?: string; outstanding?: string };
 export type AdminAnalytics = {
   role: "ADMIN"; range: string;
+  summary: { accountCount: number; bankBalance: string; transactionCount: number; deposits: string; depositCount: number; withdrawals: string; withdrawalCount: number };
   depositWithdrawal: { date: string; type: "DEPOSIT" | "WITHDRAWAL"; amount: string; count: number }[];
   transactionTypes: { type: string; status: string; amount: string; count: number }[];
   transactionStatuses: Record<string, number>;
@@ -13,6 +14,7 @@ export type AdminAnalytics = {
 };
 export type CustomerAnalytics = {
   role: "CUSTOMER"; range: string;
+  summary: { deposits: string; depositCount: number; withdrawals: string; withdrawalCount: number };
   cashFlow: { date: string; incoming: string; outgoing: string; amount: string; count: number }[];
   transactionStatuses: Record<string, number>;
   accounts: { type: string; status: string; balance: string }[];

@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { AlertCircle, BadgeCheck, Camera, Check, CreditCard, LoaderCircle, Mail, Pencil, ShieldCheck, Upload, UserRound, X } from "lucide-react";
-import { profileUpdateSchema, validateProfileImage } from "@/lib/validation/profile";
-import { useCreateAvatarUploadSignatureMutation, useCustomerProfileQuery, useFinalizeAvatarUploadMutation, useRemoveAvatarMutation, useUpdateCustomerProfileMutation } from "@/store/authApi";
+import { AlertCircle, BadgeCheck, Camera, Check, CreditCard, LoaderCircle, LockKeyhole, Mail, Pencil, ShieldCheck, Upload, UserRound, X } from "lucide-react";
+import { profileUpdateSchema, transactionPinUpdateSchema, validateProfileImage } from "@/lib/validation/profile";
+import { useCreateAvatarUploadSignatureMutation, useCustomerProfileQuery, useFinalizeAvatarUploadMutation, useRemoveAvatarMutation, useTransactionPinStatusQuery, useUpdateCustomerProfileMutation, useUpdateTransactionPinMutation } from "@/store/authApi";
 
 function initialsFor(name: string) {
   return name.trim().split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 }
 
-function formatDate(value?: string) {
+function formatDate(value?: string | null) {
   if (!value) return "Not available";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleDateString();
@@ -23,11 +23,13 @@ function InformationField({ label, value, icon: Icon }: { label: string; value: 
 }
 
 export function CustomerProfilePage() {
-  const { data, isLoading, isError, refetch } = useCustomerProfileQuery();
+  const { data, isLoading, isError, refetch } = useCustomerProfileQuery(undefined, { refetchOnMountOrArgChange: true });
   const [updateProfile, updateState] = useUpdateCustomerProfileMutation();
   const [createAvatarUploadSignature, signatureState] = useCreateAvatarUploadSignatureMutation();
   const [finalizeAvatarUpload, finalizeState] = useFinalizeAvatarUploadMutation();
   const [removeAvatar, removeState] = useRemoveAvatarMutation();
+  const { data: transactionPinStatus, isLoading: pinStatusLoading, isError: pinStatusError, refetch: refetchPinStatus } = useTransactionPinStatusQuery();
+  const [updateTransactionPin, pinUpdateState] = useUpdateTransactionPinMutation();
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState("");
   const [formError, setFormError] = useState("");
@@ -36,9 +38,15 @@ export function CustomerProfilePage() {
   const [photoPreview, setPhotoPreview] = useState("");
   const [photoError, setPhotoError] = useState("");
   const [photoNotice, setPhotoNotice] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [pinNotice, setPinNotice] = useState("");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const photoPreviewRef = useRef<string | null>(null);
   const profile = data?.data.profile;
+  const verificationStatus = profile?.verificationStatus ?? "PENDING";
 
   useEffect(() => {
     return () => {
@@ -131,6 +139,29 @@ export function CustomerProfilePage() {
     }
   }
 
+  async function saveTransactionPin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPinError("");
+    setPinNotice("");
+    const parsed = transactionPinUpdateSchema.safeParse({ newPin, confirmPin, currentPassword });
+    if (!parsed.success) {
+      setPinError(parsed.error.issues[0]?.message ?? "Enter a valid Transaction PIN.");
+      return;
+    }
+    try {
+      await updateTransactionPin(parsed.data).unwrap();
+      setNewPin("");
+      setConfirmPin("");
+      setCurrentPassword("");
+      setPinNotice(transactionPinStatus?.data.configured ? "Your Transaction PIN was changed." : "Your Transaction PIN is set and ready for transfers.");
+    } catch (error: unknown) {
+      const message = error && typeof error === "object" && "data" in error && error.data && typeof error.data === "object" && "message" in error.data && typeof error.data.message === "string"
+        ? error.data.message
+        : "Could not save your Transaction PIN. Check your password and try again.";
+      setPinError(message);
+    }
+  }
+
   if (isLoading) return <div className="mx-auto max-w-[1120px] px-5 py-8 sm:px-8 lg:px-10" role="status"><div className="dashboard-skeleton h-44 rounded-2xl bg-white/[0.04]" /><p className="mt-3 text-xs text-slate-400">Loading your profile…</p></div>;
   if (isError || !profile || !data) return <div className="mx-auto max-w-[1120px] px-5 py-8 sm:px-8 lg:px-10"><div role="alert" className="rounded-2xl border border-rose-400/20 bg-rose-400/[0.06] p-5"><p className="text-sm font-semibold text-slate-100">Your profile could not be loaded</p><p className="mt-1 text-xs text-slate-400">Check your connection and try again.</p><button type="button" onClick={() => void refetch()} className="dashboard-interactive mt-3 rounded-lg bg-white/[0.06] px-3 py-2 text-xs font-semibold text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">Try again</button></div></div>;
 
@@ -147,6 +178,27 @@ export function CustomerProfilePage() {
         <div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-300">Customer profile</p><h2 id="profile-heading" className="mt-1 break-words text-xl font-semibold text-slate-100">{profile.name}</h2><p className="mt-1 break-all text-sm text-slate-400">{profile.email}</p><span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-2.5 py-1 text-[10px] font-semibold text-emerald-200"><BadgeCheck size={13} />{profile.role === "CUSTOMER" ? "Customer" : profile.role}</span></div>
         {!isEditing && <button type="button" onClick={() => { setName(profile.name); setFormError(""); setIsEditing(true); }} className="dashboard-interactive inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"><Pencil size={14} />Edit profile</button>}
       </div>
+    </section>
+
+    <section className={`mt-5 rounded-2xl border p-5 sm:p-6 ${verificationStatus === "VERIFIED" ? "border-emerald-300/15 bg-emerald-300/[0.035]" : verificationStatus === "REJECTED" ? "border-rose-300/15 bg-rose-300/[0.035]" : "border-amber-300/15 bg-amber-300/[0.035]"}`} aria-labelledby="verification-status-heading">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><ShieldCheck size={17} className="text-blue-300"/><h2 id="verification-status-heading" className="text-sm font-semibold text-slate-100">Customer verification</h2></div><p className="mt-1.5 text-xs leading-5 text-slate-400">Your verification status is managed by authorized bank staff.</p></div><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${verificationStatus === "VERIFIED" ? "bg-emerald-300/[0.09] text-emerald-200" : verificationStatus === "REJECTED" ? "bg-rose-300/[0.09] text-rose-200" : "bg-amber-300/[0.09] text-amber-200"}`}>{verificationStatus}</span></div>
+      {verificationStatus === "PENDING" ? <p className="mt-3 text-xs leading-5 text-amber-100/80">Your information is waiting for staff review. You cannot change this status from your profile.</p> : <p className="mt-3 text-xs text-slate-400">{verificationStatus === "VERIFIED" ? "Reviewed and verified" : "Reviewed"}: {formatDate(profile.verifiedAt)}</p>}
+      {verificationStatus === "REJECTED" && profile.verificationNote && <p className="mt-3 rounded-xl border border-rose-300/10 bg-rose-300/[0.04] px-3.5 py-3 text-xs leading-5 text-rose-100"><span className="font-semibold">Staff note: </span>{profile.verificationNote}</p>}
+    </section>
+
+    <section className="mt-5 rounded-2xl border border-white/[0.07] bg-[#10182b] p-5 sm:p-6" aria-labelledby="transaction-pin-heading">
+      <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-400/10 text-blue-200"><LockKeyhole size={17}/></span><div><h2 id="transaction-pin-heading" className="text-sm font-semibold text-slate-100">Transaction PIN</h2><p className="mt-1 text-[11px] leading-5 text-slate-400">A six-digit PIN authorizes sensitive fund transfers. It is stored securely and is never shown here.</p></div></div>
+      {pinStatusLoading ? <p role="status" className="mt-4 text-xs text-slate-400">Checking PIN settings…</p> : pinStatusError ? <div className="mt-4"><p role="alert" className="text-xs text-rose-200">Could not load Transaction PIN settings.</p><button type="button" onClick={() => void refetchPinStatus()} className="mt-2 text-xs font-semibold text-blue-200">Try again</button></div> : <>
+        <p className="mt-4 text-xs text-slate-400">{transactionPinStatus?.data.configured ? "A Transaction PIN is configured. Enter a new PIN to change it." : "No Transaction PIN is configured yet. Set one before making a fund transfer."}</p>
+        <form onSubmit={saveTransactionPin} className="mt-4 grid gap-3 sm:grid-cols-2" noValidate>
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">{transactionPinStatus?.data.configured ? "New Transaction PIN" : "New Transaction PIN"}</span><input name="newPin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} pattern="[0-9]{6}" value={newPin} onChange={(event) => setNewPin(event.target.value)} className="dashboard-interactive w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 font-mono text-sm tracking-[0.3em] text-slate-100 outline-none focus:border-blue-300/40 focus:ring-2 focus:ring-blue-300/20" aria-label="New six digit Transaction PIN" /></label>
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Confirm New PIN</span><input name="confirmPin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} pattern="[0-9]{6}" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value)} className="dashboard-interactive w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 font-mono text-sm tracking-[0.3em] text-slate-100 outline-none focus:border-blue-300/40 focus:ring-2 focus:ring-blue-300/20" aria-label="Confirm six digit Transaction PIN" /></label>
+          <label className="block sm:col-span-2"><span className="mb-1.5 block text-xs font-medium text-slate-400">Current Login Password</span><input name="currentPassword" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="dashboard-interactive w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-300/40 focus:ring-2 focus:ring-blue-300/20" /></label>
+          {pinError && <p role="alert" className="text-xs text-rose-300 sm:col-span-2">{pinError}</p>}
+          {pinNotice && <p role="status" className="text-xs text-emerald-200 sm:col-span-2">{pinNotice}</p>}
+          <div className="sm:col-span-2"><button type="submit" disabled={pinUpdateState.isLoading} className="dashboard-interactive inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">{pinUpdateState.isLoading && <LoaderCircle size={14} className="animate-spin" />}{pinUpdateState.isLoading ? "Saving…" : transactionPinStatus?.data.configured ? "Change PIN" : "Set PIN"}</button></div>
+        </form>
+      </>}
     </section>
 
     <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">

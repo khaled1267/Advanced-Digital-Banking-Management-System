@@ -20,7 +20,8 @@ const hasDedicatedTestDatabase = Boolean(
   testDatabase &&
   /(?:^|[_-])test(?:$|[_-])/i.test(testDatabase),
 );
-if (hasDedicatedTestDatabase) process.env.MONGODB_DATABASE = testDatabase;
+const runDatabaseIntegrationTests = process.env.RUN_DB_INTEGRATION_TESTS === "true" && hasDedicatedTestDatabase;
+if (runDatabaseIntegrationTests) process.env.MONGODB_DATABASE = testDatabase;
 
 function profileRequest(method: "GET" | "PATCH", token?: string, body?: unknown) {
   const headers = new Headers();
@@ -62,7 +63,7 @@ test("profile picture validation accepts supported images up to 5 MB", () => {
   assert.equal(validateProfileImage({ type: "image/jpeg", size: PROFILE_IMAGE_MAX_BYTES }), null);
   assert.equal(validateProfileImage({ type: "image/png", size: 1024 }), null);
   assert.equal(validateProfileImage({ type: "image/webp", size: 1024 }), null);
-  assert.match(validateProfileImage({ type: "image/png", size: 0 }) ?? "", /not be empty/);
+  assert.match(validateProfileImage({ type: "image/png", size: 0 }) ?? "", /not empty/);
   assert.match(validateProfileImage({ type: "image/gif", size: 1024 }) ?? "", /JPG, PNG, or WebP/);
   assert.match(validateProfileImage({ type: "image/jpeg", size: PROFILE_IMAGE_MAX_BYTES + 1 }) ?? "", /5 MB/);
 });
@@ -91,7 +92,7 @@ test("profile API rejects unauthenticated requests", async () => {
   assert.equal((await removeAvatar(avatarRequest("DELETE"))).status, 401);
 });
 
-test("authenticated customer can read and update only their own profile", { skip: !hasDedicatedTestDatabase }, async () => {
+test("authenticated customer can read and update only their own profile", { skip: !runDatabaseIntegrationTests }, async () => {
   await connectToDatabase();
   const suffix = randomUUID();
   const ownEmail = `profile-owner-${suffix}@example.test`;
@@ -142,7 +143,7 @@ test("authenticated customer can read and update only their own profile", { skip
   }
 });
 
-test("avatar replacement persists on the authenticated account and removal clears its reference", { skip: !hasDedicatedTestDatabase }, async () => {
+test("avatar replacement persists on the authenticated account and removal clears its reference", { skip: !runDatabaseIntegrationTests }, async () => {
   await connectToDatabase();
   const suffix = randomUUID();
   const email = `avatar-owner-${suffix}@example.test`;

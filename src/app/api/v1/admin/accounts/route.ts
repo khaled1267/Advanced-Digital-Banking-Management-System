@@ -7,6 +7,7 @@ import {
 } from "@/lib/validation/bank-account";
 import { BankAccount } from "@/models/BankAccount";
 import { User } from "@/models/User";
+import { serializeAccountTransactionLimits } from "@/lib/account-transaction-limits";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     const [accounts, total] = await Promise.all([
       BankAccount.find(filter)
-        .select("accountNumber userId accountType balance currency status createdAt updatedAt")
+        .select("accountNumber userId accountType balance currency status transactionLimits limitsUpdatedBy limitsUpdatedAt createdAt updatedAt")
         .sort({ createdAt: -1, _id: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -71,6 +72,9 @@ export async function GET(request: NextRequest) {
             balance: account.balance.toString(),
             currency: account.currency,
             status: account.status,
+            transactionLimits: serializeAccountTransactionLimits(account.transactionLimits),
+            limitsUpdatedBy: account.limitsUpdatedBy?.toString() ?? null,
+            limitsUpdatedAt: account.limitsUpdatedAt ?? null,
             createdAt: account.createdAt,
             updatedAt: account.updatedAt,
             accountHolder: holder

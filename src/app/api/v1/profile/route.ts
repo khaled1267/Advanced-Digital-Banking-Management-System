@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
     const [user, accounts] = await Promise.all([
-      User.findById(authorization.user._id).select("name email role status createdAt profileImageUrl profileImagePublicId").lean(),
+      User.findById(authorization.user._id).select("name email role status createdAt profileImageUrl profileImagePublicId verificationStatus verifiedAt verificationNote").lean(),
       BankAccount.find({ userId: authorization.user._id })
         .select("accountNumber accountType status createdAt")
         .sort({ createdAt: -1, _id: -1 })
@@ -39,6 +39,9 @@ export async function GET(request: NextRequest) {
           status: user.status,
           createdAt: user.createdAt,
           profileImageUrl: user.profileImageUrl ?? null,
+          verificationStatus: user.verificationStatus ?? "PENDING",
+          verifiedAt: user.verifiedAt ?? null,
+          verificationNote: user.verificationNote ?? null,
         },
         accounts: accounts.map((account) => ({
           id: account._id.toString(),
@@ -75,7 +78,7 @@ export async function PATCH(request: NextRequest) {
       { _id: authorization.user._id, role: "CUSTOMER", status: "ACTIVE" },
       { $set: { name: parsed.data.name } },
       { new: true, runValidators: true },
-    ).select("name email role status createdAt profileImageUrl");
+    ).select("name email role status createdAt profileImageUrl verificationStatus verifiedAt verificationNote");
 
     if (!user) return errorResponse(404, "Your profile could not be found.");
 
@@ -90,6 +93,9 @@ export async function PATCH(request: NextRequest) {
           status: user.status,
           createdAt: user.createdAt,
           profileImageUrl: user.profileImageUrl ?? null,
+          verificationStatus: user.verificationStatus ?? "PENDING",
+          verifiedAt: user.verifiedAt ?? null,
+          verificationNote: user.verificationNote ?? null,
         },
       },
     }, { headers: { "cache-control": "no-store" } });

@@ -22,6 +22,7 @@ function operationErrorResponse(error: LoanRepaymentOperationError) {
     OUTSTANDING_UNAVAILABLE: [409, "The loan does not have a valid outstanding balance."],
     SOURCE_ACCOUNT_UNAVAILABLE: [404, "Your active BDT source account was not found."],
     INSUFFICIENT_BALANCE: [409, "The source account does not have enough available balance."],
+    MINIMUM_BALANCE: [409, "This repayment would go below the account's minimum balance."],
     OVERPAYMENT: [409, "Repayment cannot exceed the current outstanding balance."],
     IDEMPOTENCY_CONFLICT: [409, "This request key was already used for a different repayment."],
     OUTSTANDING_CHANGED: [409, "The loan balance changed during this request. Please retry."],

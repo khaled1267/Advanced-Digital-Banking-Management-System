@@ -4,6 +4,7 @@ import { BankAccount } from "@/models/BankAccount";
 import { Transaction } from "@/models/Transaction";
 import { User } from "@/models/User";
 import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
+import { AccountTransferLimitError, validateAccountTransactionLimits } from "@/lib/account-transaction-limits";
 import type { CreateTransferInput } from "@/lib/validation/transfer";
 
 export class TransferOperationError extends Error {
@@ -14,6 +15,9 @@ export class TransferOperationError extends Error {
       | "SELF_TRANSFER"
       | "INSUFFICIENT_BALANCE"
       | "RECIPIENT_BALANCE_LIMIT"
+      | "MINIMUM_BALANCE"
+      | "MAXIMUM_SINGLE_AMOUNT"
+      | "DAILY_TRANSFER_LIMIT"
       | "IDEMPOTENCY_CONFLICT",
   ) {
     super(code);
@@ -27,7 +31,7 @@ function isDuplicateKeyError(error: unknown) {
 
 async function findMatchingReplay(
   customerId: mongoose.Types.ObjectId,
-  input: CreateTransferInput,
+  input: Omit<CreateTransferInput, "transactionPin">,
   session?: ClientSession,
 ) {
   let existingQuery = Transaction.findOne({
@@ -58,7 +62,7 @@ async function findMatchingReplay(
 
 async function executeInSession(
   customerId: mongoose.Types.ObjectId,
-  input: CreateTransferInput,
+  input: Omit<CreateTransferInput, "transactionPin">,
   session: ClientSession,
 ) {
   const replay = await findMatchingReplay(customerId, input, session);
@@ -69,7 +73,7 @@ async function executeInSession(
     userId: customerId,
     status: "ACTIVE",
     currency: "BDT",
-  }).select("_id balance").session(session);
+  }).select("_id balance transactionLimits").session(session);
   if (!sender) throw new TransferOperationError("SOURCE_ACCOUNT_UNAVAILABLE");
 
   const recipient = await BankAccount.findOne({ accountNumber: input.recipientAccountNumber })
@@ -92,6 +96,25 @@ async function executeInSession(
   if (amountPaisa === null || amountPaisa <= BigInt("0")) {
     throw new TransferOperationError("INSUFFICIENT_BALANCE");
   }
+  let accountLimits: Awaited<ReturnType<typeof validateAccountTransactionLimits>>;
+  try {
+    accountLimits = await validateAccountTransactionLimits({
+      accountId: sender._id,
+      amountPaisa,
+      limits: sender.transactionLimits,
+      session,
+    });
+  } catch (error: unknown) {
+    if (error instanceof AccountTransferLimitError) throw new TransferOperationError(error.code);
+    throw error;
+  }
+  const senderBalancePaisa = parseBdtPaisa(sender.balance.toString());
+  if (senderBalancePaisa === null || senderBalancePaisa < amountPaisa) {
+    throw new TransferOperationError("INSUFFICIENT_BALANCE");
+  }
+  if (senderBalancePaisa - amountPaisa < accountLimits.minimumBalancePaisa) {
+    throw new TransferOperationError("MINIMUM_BALANCE");
+  }
   const amount = mongoose.Types.Decimal128.fromString(input.amount);
   const debit = mongoose.Types.Decimal128.fromString("-" + input.amount);
   const senderUpdate = await BankAccount.updateOne(
@@ -100,7 +123,7 @@ async function executeInSession(
       userId: customerId,
       status: "ACTIVE",
       currency: "BDT",
-      balance: { $gte: amount },
+      balance: { $gte: accountLimits.minimumPriorBalance },
     },
     { $inc: { balance: debit } },
     { session },
@@ -111,11 +134,15 @@ async function executeInSession(
       userId: customerId,
       status: "ACTIVE",
       currency: "BDT",
-    }).select("balance").session(session);
+    }).select("balance transactionLimits").session(session);
     const availablePaisa = latestSender ? parseBdtPaisa(latestSender.balance.toString()) : null;
     if (availablePaisa === null || availablePaisa < amountPaisa) {
       throw new TransferOperationError("INSUFFICIENT_BALANCE");
     }
+    const minimumPaisa = latestSender?.transactionLimits?.minimumBalance
+      ? parseBdtPaisa(latestSender.transactionLimits.minimumBalance.toString()) ?? BigInt("0")
+      : BigInt("0");
+    if (availablePaisa - amountPaisa < minimumPaisa) throw new TransferOperationError("MINIMUM_BALANCE");
     throw new TransferOperationError("SOURCE_ACCOUNT_UNAVAILABLE");
   }
 
@@ -176,7 +203,7 @@ async function executeInSession(
 
 export async function executeTransfer(
   customerId: mongoose.Types.ObjectId,
-  input: CreateTransferInput,
+  input: Omit<CreateTransferInput, "transactionPin">,
 ) {
   const session = await mongoose.startSession();
   try {

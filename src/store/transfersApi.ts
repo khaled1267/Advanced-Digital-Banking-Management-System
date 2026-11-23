@@ -44,6 +44,7 @@ export type CreateTransferRequest = {
   recipientAccountNumber: string;
   amount: string;
   description?: string;
+  transactionPin: string;
   idempotencyKey: string;
 };
 

@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/user-security.test.ts tests/profile.test.ts tests/notifications.test.ts"
+    "test": "tsx --test tests/user-security.test.ts tests/profile.test.ts tests/notifications.test.ts tests/analytics-range.test.ts tests/staff-customer-registration.test.ts tests/customer-verification.test.ts tests/transaction-review.test.ts tests/transaction-pin-limits.test.ts"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.15.0",

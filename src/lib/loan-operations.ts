@@ -27,6 +27,7 @@ export class LoanRepaymentOperationError extends Error {
     | "OUTSTANDING_UNAVAILABLE"
     | "SOURCE_ACCOUNT_UNAVAILABLE"
     | "INSUFFICIENT_BALANCE"
+    | "MINIMUM_BALANCE"
     | "OVERPAYMENT"
     | "IDEMPOTENCY_CONFLICT"
     | "OUTSTANDING_CHANGED") {
@@ -99,13 +100,20 @@ async function executeLoanRepaymentInSession(
     userId: customerId,
     status: "ACTIVE",
     currency: "BDT",
-  }).select("_id balance").session(session);
+  }).select("_id balance transactionLimits").session(session);
   if (!account) throw new LoanRepaymentOperationError("SOURCE_ACCOUNT_UNAVAILABLE");
 
   const accountBalancePaisa = parseBdtPaisa(account.balance.toString());
   if (accountBalancePaisa === null || accountBalancePaisa < amountPaisa) {
     throw new LoanRepaymentOperationError("INSUFFICIENT_BALANCE");
   }
+  const minimumBalancePaisa = account.transactionLimits?.minimumBalance
+    ? parseBdtPaisa(account.transactionLimits.minimumBalance.toString()) ?? BigInt("0")
+    : BigInt("0");
+  if (accountBalancePaisa - amountPaisa < minimumBalancePaisa || minimumBalancePaisa + amountPaisa > MAX_BDT_PAISA) {
+    throw new LoanRepaymentOperationError("MINIMUM_BALANCE");
+  }
+  const minimumPriorBalance = mongoose.Types.Decimal128.fromString(formatBdtPaisa(minimumBalancePaisa + amountPaisa));
 
   const amountText = formatBdtPaisa(amountPaisa);
   const amount = mongoose.Types.Decimal128.fromString(amountText);
@@ -116,14 +124,14 @@ async function executeLoanRepaymentInSession(
       userId: customerId,
       status: "ACTIVE",
       currency: "BDT",
-      balance: { $gte: amount },
+      balance: { $gte: minimumPriorBalance },
     },
     { $inc: { balance: debit } },
     { session },
   );
   if (accountUpdate.matchedCount !== 1) {
     const latestAccount = await BankAccount.findOne({ _id: account._id, userId: customerId })
-      .select("status currency balance")
+      .select("status currency balance transactionLimits")
       .session(session);
     if (!latestAccount || latestAccount.status !== "ACTIVE" || latestAccount.currency !== "BDT") {
       throw new LoanRepaymentOperationError("SOURCE_ACCOUNT_UNAVAILABLE");
@@ -131,6 +139,12 @@ async function executeLoanRepaymentInSession(
     const latestBalancePaisa = parseBdtPaisa(latestAccount.balance.toString());
     if (latestBalancePaisa === null || latestBalancePaisa < amountPaisa) {
       throw new LoanRepaymentOperationError("INSUFFICIENT_BALANCE");
+    }
+    const latestMinimumPaisa = latestAccount.transactionLimits?.minimumBalance
+      ? parseBdtPaisa(latestAccount.transactionLimits.minimumBalance.toString()) ?? BigInt("0")
+      : BigInt("0");
+    if (latestBalancePaisa - amountPaisa < latestMinimumPaisa) {
+      throw new LoanRepaymentOperationError("MINIMUM_BALANCE");
     }
     throw new LoanRepaymentOperationError("SOURCE_ACCOUNT_UNAVAILABLE");
   }

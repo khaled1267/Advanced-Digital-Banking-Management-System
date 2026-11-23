@@ -1,12 +1,12 @@
 import mongoose, { type ClientSession } from "mongoose";
-import { parseBdtPaisa } from "@/lib/bdt-money";
+import { formatBdtPaisa, MAX_BDT_PAISA, parseBdtPaisa } from "@/lib/bdt-money";
 import { BankAccount } from "@/models/BankAccount";
 import { Transaction } from "@/models/Transaction";
 import { Withdrawal } from "@/models/Withdrawal";
 import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
 
 export class WithdrawalOperationError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "CONFLICT" | "ACCOUNT_UNAVAILABLE" | "INSUFFICIENT_BALANCE") {
+  constructor(readonly code: "NOT_FOUND" | "CONFLICT" | "ACCOUNT_UNAVAILABLE" | "INSUFFICIENT_BALANCE" | "MINIMUM_BALANCE") {
     super(code);
     this.name = "WithdrawalOperationError";
   }
@@ -28,7 +28,7 @@ async function approveWithdrawal(
 ) {
   const withdrawal = await pendingWithdrawal(withdrawalId, session);
   const account = await BankAccount.findOne({ _id: withdrawal.accountId, status: "ACTIVE" })
-    .select("_id")
+    .select("_id balance transactionLimits")
     .session(session);
   if (!account) throw new WithdrawalOperationError("ACCOUNT_UNAVAILABLE");
 
@@ -37,23 +37,36 @@ async function approveWithdrawal(
   if (amountPaisa === null || amountPaisa <= BigInt("0")) {
     throw new WithdrawalOperationError("INSUFFICIENT_BALANCE");
   }
+  const balancePaisa = parseBdtPaisa(account.balance.toString());
+  const minimumPaisa = account.transactionLimits?.minimumBalance
+    ? parseBdtPaisa(account.transactionLimits.minimumBalance.toString()) ?? BigInt("0")
+    : BigInt("0");
+  if (balancePaisa === null || balancePaisa < amountPaisa) throw new WithdrawalOperationError("INSUFFICIENT_BALANCE");
+  if (balancePaisa - amountPaisa < minimumPaisa || minimumPaisa + amountPaisa > MAX_BDT_PAISA) {
+    throw new WithdrawalOperationError("MINIMUM_BALANCE");
+  }
+  const minimumPriorBalance = mongoose.Types.Decimal128.fromString(formatBdtPaisa(minimumPaisa + amountPaisa));
   const debit = mongoose.Types.Decimal128.fromString("-" + amount);
   const accountUpdate = await BankAccount.updateOne(
     {
       _id: account._id,
       status: "ACTIVE",
-      balance: { $gte: withdrawal.amount },
+      balance: { $gte: minimumPriorBalance },
     },
     { $inc: { balance: debit } },
     { session },
   );
   if (accountUpdate.matchedCount !== 1) {
-    const current = await BankAccount.findById(account._id).select("status balance").session(session);
+    const current = await BankAccount.findById(account._id).select("status balance transactionLimits").session(session);
     if (!current || current.status !== "ACTIVE") throw new WithdrawalOperationError("ACCOUNT_UNAVAILABLE");
     const availablePaisa = parseBdtPaisa(current.balance.toString());
     if (availablePaisa === null || availablePaisa < amountPaisa) {
       throw new WithdrawalOperationError("INSUFFICIENT_BALANCE");
     }
+    const currentMinimum = current.transactionLimits?.minimumBalance
+      ? parseBdtPaisa(current.transactionLimits.minimumBalance.toString()) ?? BigInt("0")
+      : BigInt("0");
+    if (availablePaisa - amountPaisa < currentMinimum) throw new WithdrawalOperationError("MINIMUM_BALANCE");
     throw new WithdrawalOperationError("CONFLICT");
   }
 

@@ -1,5 +1,6 @@
 import { DashboardShell } from "@/components/DashboardShell";
 import { TransactionHistory } from "@/components/TransactionHistory";
+import { StaffPendingRequestQueue } from "@/components/StaffPendingRequestQueue";
 import { requireDashboardRoles } from "@/lib/authorization";
 
 export default async function AdminTransactionsPage() {
@@ -7,7 +8,10 @@ export default async function AdminTransactionsPage() {
   const role = user.role === "ADMIN" ? "admin" : "staff";
   return (
     <DashboardShell role={role}>
-      <TransactionHistory mode="admin" />
+      <>
+        <TransactionHistory mode="admin" canStaffReview={user.role === "STAFF"} />
+        {user.role === "STAFF" && <StaffPendingRequestQueue />}
+      </>
     </DashboardShell>
   );
 }

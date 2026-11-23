@@ -14,7 +14,7 @@ import { Loan } from "../src/models/Loan";
 import { LoanRepayment } from "../src/models/LoanRepayment";
 import { Notification } from "../src/models/Notification";
 import { connectToDatabase } from "../src/lib/mongodb";
-import { hashPassword, verifyPassword } from "../src/lib/password";
+import { hashPassword, hashTransactionPin, verifyPassword } from "../src/lib/password";
 import { POST as login } from "../src/app/api/v1/auth/login/route";
 import { GET as getCurrentUser } from "../src/app/api/v1/auth/me/route";
 import { POST as logout } from "../src/app/api/v1/auth/logout/route";
@@ -1055,6 +1055,12 @@ test(
       assert.equal(await LoanRepayment.countDocuments({ loanId: idempotentLoan._id }), 1);
       assert.equal((await BankAccount.findById(accounts[0]._id))?.balance.toString(), "896.00");
 
+      await BankAccount.updateOne({ _id: accounts[0]._id }, { $set: { "transactionLimits.minimumBalance": "892.00" } });
+      assert.equal((await repay(rollbackLoan._id, tokens.customer, repaymentBody("5.00"))).status, 409);
+      assert.equal((await BankAccount.findById(accounts[0]._id))?.balance.toString(), "896.00");
+      assert.equal((await Loan.findById(rollbackLoan._id))?.status, "DISBURSED");
+      await BankAccount.updateOne({ _id: accounts[0]._id }, { $unset: { "transactionLimits.minimumBalance": 1 } });
+
       const historyResponse = await getLoanRepayments(accountRequest(`/loans/${mainLoan._id}/repayments?page=1&limit=2`, tokens.customer), {
         params: Promise.resolve({ id: mainLoan._id.toString() }),
       });
@@ -1879,6 +1885,7 @@ test(
 
       const storedUser = await User.findOne({ email }).select("+passwordHash");
       assert.ok(storedUser);
+      assert.equal(storedUser.verificationStatus, "PENDING");
       assert.notEqual(storedUser.passwordHash, password);
       assert.equal(await verifyPassword(password, storedUser.passwordHash), true);
 
@@ -3123,6 +3130,7 @@ test("transfer request validation is strict and requires a UUID idempotency key"
     fromAccountId: "507f1f77bcf86cd799439011",
     recipientAccountNumber: "nb0123456789abcdef",
     amount: "12.34",
+    transactionPin: "001234",
     idempotencyKey: randomUUID(),
   };
   assert.equal(createTransferSchema.safeParse(valid).success, true);
@@ -3144,6 +3152,7 @@ test("transfer APIs require a customer session", async () => {
     fromAccountId: "507f1f77bcf86cd799439011",
     recipientAccountNumber: "NB0123456789ABCDEF",
     amount: "1.00",
+    transactionPin: "001234",
     idempotencyKey: randomUUID(),
   };
   assert.equal((await createTransfer(accountRequest("/transfers", undefined, "POST", body))).status, 401);
@@ -3188,8 +3197,9 @@ test(
       }
 
       const passwordHash = await hashPassword("Task13 Integration Password 2026!");
+      const transactionPinHash = await hashTransactionPin("001234");
       const [sender, recipient, unrelated, staff] = await User.create([
-        { name: "Task Thirteen Sender", email: emails.sender, passwordHash, role: "CUSTOMER" },
+        { name: "Task Thirteen Sender", email: emails.sender, passwordHash, transactionPinHash, role: "CUSTOMER" },
         { name: "Task Thirteen Recipient", email: emails.recipient, passwordHash, role: "CUSTOMER" },
         { name: "Task Thirteen Unrelated", email: emails.unrelated, passwordHash, role: "CUSTOMER" },
         { name: "Task Thirteen Staff", email: emails.staff, passwordHash, role: "STAFF" },
@@ -3212,6 +3222,7 @@ test(
         recipientAccountNumber: destination.accountNumber,
         amount: "30.25",
         description: "Rent",
+        transactionPin: "001234",
         idempotencyKey: randomUUID(),
       };
       const createdResponse = await createTransfer(accountRequest("/transfers", tokens.sender, "POST", transferBody));

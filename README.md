@@ -76,23 +76,36 @@ The application uses the Next.js App Router for the web interface and server-sid
 - View loan repayment information and repayment history.
 - Download account statements in PDF and CSV formats.
 - View and edit supported profile information.
+- View customer verification status, decision date, and a rejection note on the profile.
 - Profile picture upload, change, and removal through the Cloudinary integration, once Cloudinary credentials are configured.
+- View personal analytics and lifetime successful deposit/withdrawal totals; customer records are scoped to the authenticated account owner.
+- Set or change a six-digit Transaction PIN using the current login password; the PIN hash is stored with Argon2id and is required for fund transfers.
+- View account-specific transfer limits; the server checks configured limits during transfers and preserves minimum balance for customer debits.
 
 ### Staff Operations
 
-- Register customers and assist with account creation.
-- Review relevant customer and account information.
+- Register Customer accounts and assist with bank account creation.
+- Search and review stored Customer information, mark pending records Verified, or Reject them with a reason.
+- Verification decisions are recorded against the signed-in Staff/Admin account and cannot be changed after submission.
 - Review deposit and withdrawal requests according to the configured workflow.
+- Review pending deposit/withdrawal requests separately from their financial approval state; record review notes or flag a record for Admin review.
+- Search transactions by ID, filter by date/type/financial status/review status/active flag, and view masked account references.
+- Flag suspicious activity with a supported review category and optional explanation. A flag is a review signal, not a fraud finding.
 - Review loan applications and forward them for Admin decision where the workflow requires it.
+- View all-time deposit/withdrawal request counts and loan workflow counts without bank-wide transaction analytics.
 - Access is restricted by Staff role permissions.
 
 ### Admin Operations
 
 - Manage users and accounts within Admin permissions.
+- Configure each account's daily transfer limit, maximum single transfer, and minimum balance; Staff can view these values but cannot change them.
+- Search, filter, and review Customer verification status in the verification workspace.
 - Review loan applications.
 - Approve or reject loan applications.
 - Handle loan disbursement workflows.
 - Review banking activity and operational information.
+- Search and review Staff-flagged activity, inspect Staff notes/history, and resolve or dismiss flags with an Admin note.
+- View exact database aggregates for account balances and successful deposits/withdrawals, plus role-authorized charts and date filtering.
 
 ### Account Statements
 
@@ -255,6 +268,8 @@ Deposit and withdrawal requests follow an approval workflow. A request should no
 - Withdrawal rejection must not debit the Customer's account.
 - Repeated approval/rejection requests must not process the same request more than once.
 
+Staff review state is stored independently from the financial status. Starting or completing a review, adding notes, or flagging a transaction/request does not update its amount, account balance, deposit/withdrawal decision, or transaction status. Flagged items use a separate Admin workflow and append review history; resolving a flag does not reverse or freeze the original financial record.
+
 ### Loans and Repayments
 
 The loan workflow includes application, Staff review, Admin approval/rejection, disbursement, and repayment-related records.
@@ -294,8 +309,11 @@ MongoDB is accessed through Mongoose. The logical data entities in the applicati
 | Account | Customer-owned bank account details, account type, status, and balance |
 | Transaction | Financial activity and transaction status/type |
 | Deposit / Withdrawal workflow records | Requests and approval/rejection state, following the existing model design |
+| TransactionReview | Review state and append-only Staff review history associated with a transaction or pending request |
+| SuspiciousTransactionFlag | Reason, Staff attribution, Admin review state, and history; one active flag per target |
 | Loan | Loan application, review, decision, disbursement, and outstanding balance data |
 | Loan repayment records | Repayment history and related loan/account references |
+| Notification | Persistent customer notifications with read state and event deduplication |
 
 The exact MongoDB collection names are determined by the Mongoose model definitions and may differ from the logical names above. Inspect `src/models` before writing scripts or querying collections directly.
 
@@ -346,6 +364,7 @@ Create a local `.env.local` file in the project root. Never commit real credenti
 | `MONGODB_DATABASE` | Yes | Application database name; development has used `banking_management`. |
 | `JWT_SECRET` | Yes | Strong, private secret used by the authentication implementation. |
 | `MONGODB_TEST_DATABASE` | For integration tests | Dedicated test database; development has used `banking_management_task26_test`. |
+| `RUN_DB_INTEGRATION_TESTS` | Optional | Set to `true` to opt in to database-backed tests; those tests also require a dedicated test database name. |
 | `CLOUDINARY_CLOUD_NAME` | For profile image storage | Cloudinary cloud name. |
 | `CLOUDINARY_API_KEY` | For profile image storage | Cloudinary API key. |
 | `CLOUDINARY_API_SECRET` | For profile image storage | Cloudinary API secret. |
@@ -355,8 +374,9 @@ Example template (replace placeholders with your own values):
 ```env
 MONGODB_URI="mongodb+srv://<username>:<password>@<cluster-host>/"
 MONGODB_DATABASE="banking_management"
-JWT_SECRET="<generate-a-long-random-secret>"
 MONGODB_TEST_DATABASE="banking_management_task26_test"
+RUN_DB_INTEGRATION_TESTS="false"
+JWT_SECRET="<generate-a-long-random-secret>"
 
 # Required to enable persistent profile-picture uploads
 CLOUDINARY_CLOUD_NAME=""
@@ -369,8 +389,12 @@ Notes:
 - Use the actual variable names expected by the current source code and `.env.example`.
 - Do not paste secrets into README files, chat messages, screenshots, or Git commits.
 - Use a separate database for integration tests.
+- PIN lockout counters are stored in MongoDB per Customer. Five incorrect PIN attempts in a rolling 15-minute window temporarily block transfer authorization for 15 minutes; a successful check or a password-authorized PIN change clears the counter.
+- No bank-wide financial default limits are configured. Existing and newly opened accounts remain usable with their existing behavior until an Admin sets account-specific limits; missing single/daily limits mean no additional cap, and missing minimum balance is treated as BDT 0.00.
+- Set `RUN_DB_INTEGRATION_TESTS=true` only when `MONGODB_TEST_DATABASE` points to the dedicated test database.
 - Configure the same required variables in Vercel Project Settings for each deployment environment.
 - Cloudinary avatar code requires valid Cloudinary credentials before live upload/change/remove can be verified.
+- `.env.example` contains placeholders only. Transaction PIN hashes and attempt limits use the configured MongoDB database; no PIN secret environment variable is required.
 
 ---
 
@@ -519,14 +543,14 @@ Create dedicated test users in a non-production environment and fill in this tab
 
 ## Testing & Known Limitations
 
-The latest project status reported the following checks as successful:
+Latest verified checks for this audit:
 
-- ESLint / lint check.
-- TypeScript check.
-- Production build.
-- `git diff --check` for the Cloudinary integration work.
+- `npm.cmd run lint`: passed.
+- `npm.cmd run typecheck`: passed.
+- `npm.cmd run build`: passed; Next.js generated all 61 static pages.
+- `git diff --check`: passed.
 
-The automated test runner previously stopped during startup with an OS `userInfo()` / `uv_os_get_passwd` `ENOMEM` error. As a result, test assertions did not execute in that run. MongoDB integration tests and live financial workflows must not be described as fully verified based on lint, type checking, or a successful build alone.
+The configured test command contains 89 tests and subtests across user-security, profile, notifications, analytics range validation, Staff customer registration, customer verification, transaction review/flagging, and Transaction PIN/account limits. A direct invocation currently fails before loading tests because Node.js 24 `os.userInfo()` returns `uv_os_get_passwd` / `ERR_SYSTEM_ERROR` in this Windows environment. With a temporary runner-only preload that supplies the missing username, 67 tests passed, zero failed, and 22 database-backed tests were skipped because `RUN_DB_INTEGRATION_TESTS` is false. Two profile integration tests were also attempted before adding this opt-in gate; both failed DNS resolution for the configured Atlas host. No successful MongoDB integration test is claimed. MongoDB integration behavior, PIN lockout, concurrent transfer limits, and live financial workflows are not verified by lint, type checking, or a successful build.
 
 Additional items requiring configuration or verification:
 
@@ -535,6 +559,7 @@ Additional items requiring configuration or verification:
 - Live Vercel deployment and Preview/Production environment variables must be configured and tested.
 - Demo credentials must be created for all three roles and inserted into the table above before distribution.
 - Login rate limiting and token revocation/invalidation should be reviewed and strengthened before any production deployment.
+- This project does not implement per-transaction fees, automated suspicious-activity detection, a loan repayment schedule, or PDF transaction receipts. Staff can manually flag transactions and pending requests for Admin review. Account statements are available as PDF and CSV exports.
 
 ---
 

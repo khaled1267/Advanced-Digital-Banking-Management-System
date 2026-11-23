@@ -17,6 +17,7 @@ export const createTransferSchema = z.strictObject({
     .pipe(z.string().regex(/^NB[A-F\d]{16}$/)),
   amount: z.string().trim().refine(isPositiveBdtDecimal, "Enter a positive BDT amount with at most two decimal places."),
   description: z.string().trim().max(120).optional(),
+  transactionPin: z.string().regex(/^\d{6}$/, "Transaction PIN must contain six digits."),
   idempotencyKey: requestKeySchema,
 });
 

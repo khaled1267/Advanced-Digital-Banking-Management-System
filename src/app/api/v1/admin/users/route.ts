@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
       passwordHash,
       role: parsed.data.role,
       status: "ACTIVE",
+      ...(parsed.data.role === "CUSTOMER" ? { verificationStatus: "PENDING" } : {}),
     });
 
     return NextResponse.json(

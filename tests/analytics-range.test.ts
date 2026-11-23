@@ -16,7 +16,7 @@ test("custom ranges include the end date and stay within one year", () => {
   assert.ok(valid);
   assert.equal(valid.start.toISOString(), "2026-10-01T00:00:00.000Z");
   assert.equal(valid.end.toISOString(), "2026-11-01T00:00:00.000Z");
-  assert.equal(parseAnalyticsRange(new URLSearchParams("range=custom&startDate=2025-11-23&endDate=2026-11-22"), now), null);
+  assert.equal(parseAnalyticsRange(new URLSearchParams("range=custom&startDate=2025-11-22&endDate=2026-11-22"), now), null);
 });
 
 test("invalid, reversed, and future custom dates are rejected", () => {

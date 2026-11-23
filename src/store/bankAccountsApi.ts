@@ -2,12 +2,20 @@ import { baseApi } from "@/store/api";
 
 export type AccountType = "SAVINGS" | "CURRENT";
 export type AccountStatus = "ACTIVE" | "INACTIVE" | "FROZEN" | "CLOSED";
+export type AccountTransactionLimits = {
+  dailyTransferLimit: string | null;
+  maximumSingleTransferAmount: string | null;
+  minimumBalance: string | null;
+};
 
 export type BankAccount = {
   id: string;
   accountNumber: string;
   accountType: AccountType;
   balance: string;
+  transactionLimits?: AccountTransactionLimits;
+  limitsUpdatedBy?: string | { id?: string; name: string } | null;
+  limitsUpdatedAt?: string | null;
   currency: "BDT";
   status: AccountStatus;
   createdAt: string;
@@ -56,8 +64,17 @@ export const bankAccountsApi = baseApi.injectEndpoints({
         { type: "BankAccounts", id: "LIST" },
       ],
     }),
+    updateAdminAccountLimits: build.mutation<AccountResponse, { id: string; dailyTransferLimit: string | null; maximumSingleTransferAmount: string | null; minimumBalance: string | null }>({
+      query: ({ id, ...body }) => ({ url: `/admin/accounts/${id}/limits`, method: "PATCH", body }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "BankAccounts", id },
+        { type: "BankAccounts", id: "LIST" },
+        { type: "BankAccounts", id: "MINE" },
+      ],
+    }),
     getAccountHolders: build.query<AccountHoldersResponse, { search?: string }>({
       query: (params) => ({ url: "/admin/accounts/customers", params }),
+      providesTags: ["BankAccounts"],
     }),
     getMyAccounts: build.query<MyAccountsResponse, void>({
       query: () => "/accounts",
@@ -75,6 +92,7 @@ export const {
   useGetAdminAccountByIdQuery,
   useCreateAdminAccountMutation,
   useUpdateAdminAccountStatusMutation,
+  useUpdateAdminAccountLimitsMutation,
   useGetAccountHoldersQuery,
   useGetMyAccountsQuery,
   useGetMyAccountByIdQuery,

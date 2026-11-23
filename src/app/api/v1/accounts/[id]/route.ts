@@ -1,6 +1,7 @@
 import { requireApiRoles } from "@/lib/admin-api";
 import { connectToDatabase } from "@/lib/mongodb";
 import { BankAccount } from "@/models/BankAccount";
+import { serializeAccountTransactionLimits } from "@/lib/account-transaction-limits";
 import { isObjectIdOrHexString } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       _id: id,
       userId: authorization.user._id,
     })
-      .select("accountNumber accountType balance currency status createdAt updatedAt")
+      .select("accountNumber accountType balance currency status transactionLimits createdAt updatedAt")
       .lean();
     if (!account) return errorResponse(404, "Bank account not found.");
 
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           balance: account.balance.toString(),
           currency: account.currency,
           status: account.status,
+          transactionLimits: serializeAccountTransactionLimits(account.transactionLimits),
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
         },

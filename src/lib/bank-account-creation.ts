@@ -29,6 +29,7 @@ export async function createBankAccountWithRetry(
         ...input,
         accountNumber: generate(),
         balance: "0.00",
+        transactionLimits: {},
         currency: "BDT",
         status: "ACTIVE",
       });

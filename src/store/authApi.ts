@@ -9,9 +9,12 @@ export type AuthUser = {
   status: "ACTIVE" | "INACTIVE";
   createdAt?: string;
   profileImageUrl?: string | null;
+  verificationStatus?: "PENDING" | "VERIFIED" | "REJECTED";
+  verifiedAt?: string | null;
+  verificationNote?: string | null;
 };
 
-export type CustomerProfile = Pick<AuthUser, "id" | "name" | "email" | "role" | "status" | "createdAt" | "profileImageUrl">;
+export type CustomerProfile = Pick<AuthUser, "id" | "name" | "email" | "role" | "status" | "createdAt" | "profileImageUrl" | "verificationStatus" | "verifiedAt" | "verificationNote">;
 export type CustomerProfileAccount = {
   id: string;
   maskedAccountNumber: string;
@@ -30,6 +33,7 @@ type AvatarUploadSignatureResponse = {
   data: { allowed_formats: string; apiKey: string; cloudName: string; overwrite: string; public_id: string; timestamp: number; signature: string };
 };
 type AvatarMutationResponse = { status: "success"; data: { profile: CustomerProfile; cleanupPending: boolean } };
+export type TransactionPinStatusResponse = { status: "success"; data: { configured: boolean } };
 
 type AuthUserResponse = {
   status: "success";
@@ -57,6 +61,14 @@ export const authApi = baseApi.injectEndpoints({
       query: () => "/profile",
       providesTags: ["Auth"],
     }),
+    transactionPinStatus: build.query<TransactionPinStatusResponse, void>({
+      query: () => "/profile/transaction-pin",
+      providesTags: ["Auth"],
+    }),
+    updateTransactionPin: build.mutation<TransactionPinStatusResponse, { newPin: string; confirmPin: string; currentPassword: string }>({
+      query: (body) => ({ url: "/profile/transaction-pin", method: "POST", body }),
+      invalidatesTags: ["Auth"],
+    }),
     updateCustomerProfile: build.mutation<UpdateProfileResponse, { name: string }>({
       query: (body) => ({ url: "/profile", method: "PATCH", body }),
       invalidatesTags: ["Auth"],
@@ -83,6 +95,8 @@ export const {
   useLoginMutation,
   useCurrentUserQuery,
   useCustomerProfileQuery,
+  useTransactionPinStatusQuery,
+  useUpdateTransactionPinMutation,
   useUpdateCustomerProfileMutation,
   useCreateAvatarUploadSignatureMutation,
   useFinalizeAvatarUploadMutation,

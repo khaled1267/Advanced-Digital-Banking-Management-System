@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       : authorization.user.role === "STAFF"
         ? await getStaffAnalytics()
         : await getCustomerAnalytics(authorization.user._id, range);
-    return NextResponse.json({ status: "success", data });
+    return NextResponse.json({ status: "success", data }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ status: "error", message: "Could not load dashboard analytics." }, { status: 500 });
   }

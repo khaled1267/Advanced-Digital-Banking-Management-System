@@ -6,6 +6,7 @@ import { useDispatch } from "react-redux";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import {
   Activity,
+  AlertTriangle,
   Bell,
   ArrowDownLeft,
   ArrowLeftRight,
@@ -79,8 +80,10 @@ const roleContent: Record<DashboardRole, { workspace: string; title: string; nav
     nav: [
       { label: "Overview", icon: LayoutDashboard, href: "/admin/dashboard" },
       { label: "Users", icon: Users, href: "/admin/users" },
+      { label: "Customer verification", icon: ShieldCheck, href: "/admin/customers/verification" },
       { label: "Accounts", icon: Building2, href: "/admin/accounts" },
       { label: "Transactions", icon: Activity, href: "/admin/transactions" },
+      { label: "Suspicious review", icon: AlertTriangle, href: "/admin/suspicious-transactions" },
       { label: "Statements", icon: FileText, href: "/statements" },
       { label: "Deposit Management", icon: ArrowDownLeft, href: "/admin/deposits" },
       { label: "Withdrawal Management", icon: ArrowUpRight, href: "/admin/withdrawals" },
@@ -96,7 +99,8 @@ const roleContent: Record<DashboardRole, { workspace: string; title: string; nav
     title: "Staff dashboard",
     nav: [
       { label: "Overview", icon: LayoutDashboard, href: "/staff/dashboard" },
-      { label: "Customers", icon: Users },
+      { label: "Register customer", icon: Users, href: "/staff/customers/new" },
+      { label: "Verify customers", icon: ShieldCheck, href: "/staff/customers/verification" },
       { label: "Accounts", icon: Building2, href: "/admin/accounts" },
       { label: "Transactions", icon: Activity, href: "/admin/transactions" },
       { label: "Statements", icon: FileText, href: "/statements" },
@@ -146,6 +150,10 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
   const currentNavItem = content.nav.find((item) => item.href?.split("#")[0] === pathname);
   const pageTitle = pathname === "/admin/users"
     ? "User management"
+    : pathname === "/staff/customers/new"
+      ? "Register customer"
+    : pathname === "/staff/customers/verification" || pathname === "/admin/customers/verification"
+      ? "Customer verification"
     : pathname === "/admin/accounts"
       ? "Bank accounts"
       : pathname === "/statements"

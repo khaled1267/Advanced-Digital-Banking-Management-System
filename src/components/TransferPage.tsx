@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeftRight, ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock3, FileText, ShieldCheck, Wallet } from "lucide-react";
 import { parseBdtPaisa } from "@/lib/bdt-money";
+import Link from "next/link";
 import { useGetMyAccountsQuery } from "@/store/bankAccountsApi";
+import { useTransactionPinStatusQuery } from "@/store/authApi";
 import {
   useCreateTransferMutation,
   useGetMyTransfersQuery,
@@ -32,18 +35,26 @@ function TransferRow({ transfer }: { transfer: TransferRecord }) {
 }
 
 export function CustomerTransferPage() {
+  const router = useRouter();
   const { data: accountData, isLoading: accountsLoading, isError: accountsError } = useGetMyAccountsQuery();
+  const { data: pinStatus, isLoading: pinStatusLoading, isError: pinStatusError } = useTransactionPinStatusQuery();
   const accounts = accountData?.data.accounts.filter((account) => account.status === "ACTIVE") ?? [];
   const [fromAccountId, setFromAccountId] = useState("");
   const [recipientAccountNumber, setRecipientAccountNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [transactionPin, setTransactionPin] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [feedbackError, setFeedbackError] = useState(false);
   const retryKey = useRef("");
   const [createTransfer, createState] = useCreateTransferMutation();
   const selectedAccount = accounts.find((account) => account.id === fromAccountId);
+  useEffect(() => {
+    if (!pinStatusLoading && pinStatus?.data.configured === false) {
+      router.replace("/profile#transaction-pin-heading");
+    }
+  }, [pinStatus?.data.configured, pinStatusLoading, router]);
   const amountPaisa = parseBdtPaisa(amount.trim());
   const amountValid = amountPaisa !== null && amountPaisa > BigInt("0");
   const availablePaisa = selectedAccount ? parseBdtPaisa(selectedAccount.balance) : null;
@@ -59,7 +70,7 @@ export function CustomerTransferPage() {
   }
 
   async function submitTransfer() {
-    if (!selectedAccount || !amountValid || !recipientValid || exceedsBalance) return;
+    if (!selectedAccount || !amountValid || !recipientValid || exceedsBalance || !/^\d{6}$/.test(transactionPin) || !pinStatus?.data.configured) return;
     setFeedback("");
     if (!retryKey.current) retryKey.current = crypto.randomUUID();
     const request: CreateTransferRequest = {
@@ -67,6 +78,7 @@ export function CustomerTransferPage() {
       recipientAccountNumber: normalizedRecipient,
       amount: amount.trim(),
       description: description.trim() || undefined,
+      transactionPin,
       idempotencyKey: retryKey.current,
     };
     try {
@@ -77,6 +89,7 @@ export function CustomerTransferPage() {
       setRecipientAccountNumber("");
       setAmount("");
       setDescription("");
+      setTransactionPin("");
       setConfirming(false);
       retryKey.current = "";
     } catch (error: unknown) {
@@ -91,14 +104,17 @@ export function CustomerTransferPage() {
       <section className="rounded-2xl border border-white/[0.08] bg-[#10182b] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)] sm:p-6">
         <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-400/10 text-slate-100"><ArrowLeftRight size={19}/></span><div><h2 className="text-sm font-semibold text-slate-100">New bank transfer</h2><p className="mt-1 text-xs text-slate-400">The transfer completes immediately after confirmation.</p></div></div>
         <div className="mt-5 space-y-4">
+          {pinStatusLoading ? <p role="status" className="rounded-xl bg-white/[0.04] p-3 text-xs text-slate-400">Checking transfer security settings…</p> : pinStatusError ? <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-3 text-xs text-rose-200">Could not verify Transaction PIN settings. Refresh this page and try again.</p> : !pinStatus?.data.configured ? <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3.5"><p className="text-xs font-semibold text-amber-100">Set up a Transaction PIN first</p><p className="mt-1 text-[11px] leading-5 text-slate-400">A six-digit PIN is required to authorize fund transfers.</p><Link href="/profile#transaction-pin-heading" className="mt-2 inline-flex text-xs font-semibold text-blue-200 hover:text-blue-100">Open Profile security settings</Link></div> : null}
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">From account</span><select className={inputClass} value={fromAccountId} onChange={(event) => editField(() => setFromAccountId(event.target.value))} disabled={accountsLoading || accountsError || accounts.length === 0}><option value="">Choose an account</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.accountType} · {account.accountNumber}</option>)}</select>{accountsLoading && <span className="mt-1 block text-[10px] text-slate-400">Loading your accounts…</span>}{accountsError && <span role="alert" className="mt-1 block text-[10px] text-rose-200">Could not load your accounts.</span>}{!accountsLoading && !accountsError && accounts.length === 0 && <span className="mt-1 block text-[10px] text-amber-200">You need an active account to send a transfer.</span>}</label>
           {selectedAccount && <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.04] p-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#10182b] text-slate-100"><Wallet size={16}/></span><div><p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Available balance</p><p className="mt-0.5 text-sm font-semibold text-slate-100">BDT {selectedAccount.balance}</p></div></div>}
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Recipient account number</span><input className={inputClass} autoComplete="off" placeholder="NB followed by 16 characters" value={recipientAccountNumber} onChange={(event) => editField(() => setRecipientAccountNumber(event.target.value))}/>{recipientAccountNumber.length > 0 && !recipientValid && <span className="mt-1 block text-[10px] text-rose-200">Enter a valid Northstar account number.</span>}</label>
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Amount (BDT)</span><input className={inputClass} inputMode="decimal" autoComplete="off" placeholder="0.00" value={amount} onChange={(event) => editField(() => setAmount(event.target.value))}/><span className="mt-1 block text-[10px] text-slate-400">Enter a positive amount with up to two poisha decimal places.</span>{amount.length > 0 && !amountValid && <span className="mt-1 block text-[10px] text-rose-200">Enter a valid positive amount.</span>}{exceedsBalance && <span role="status" className="mt-1 block text-[10px] text-rose-200">This is above the currently available balance.</span>}</label>
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Description <span className="font-normal text-slate-400">(optional)</span></span><textarea className={inputClass + " min-h-20 resize-y"} maxLength={120} placeholder="What is this transfer for?" value={description} onChange={(event) => editField(() => setDescription(event.target.value))}/><span className="mt-1 block text-right text-[10px] text-slate-400">{description.length}/120</span></label>
+          {selectedAccount?.transactionLimits && <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3 text-[10px] text-slate-400"><p className="font-semibold text-slate-300">Account transfer limits</p><p className="mt-1">Daily: {selectedAccount.transactionLimits.dailyTransferLimit ? `BDT ${selectedAccount.transactionLimits.dailyTransferLimit}` : "Not configured"} · Single transfer: {selectedAccount.transactionLimits.maximumSingleTransferAmount ? `BDT ${selectedAccount.transactionLimits.maximumSingleTransferAmount}` : "Not configured"} · Minimum balance: {selectedAccount.transactionLimits.minimumBalance ? `BDT ${selectedAccount.transactionLimits.minimumBalance}` : "BDT 0.00"}</p></div>}
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Six-digit Transaction PIN</span><input type="password" inputMode="numeric" autoComplete="current-password" maxLength={6} pattern="[0-9]{6}" placeholder="••••••" value={transactionPin} onChange={(event) => editField(() => setTransactionPin(event.target.value))} className={inputClass + " font-mono tracking-[0.3em]"} />{transactionPin.length > 0 && !/^\d{6}$/.test(transactionPin) && <span className="mt-1 block text-[10px] text-rose-200">Enter exactly six digits.</span>}</label>
           <div className="rounded-xl border border-blue-400/20 bg-blue-400/10 p-3.5"><div className="flex items-start gap-2.5"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-blue-200"/><p className="text-xs leading-5 text-blue-100">The server checks both accounts and the latest balance. Repeating the same confirmed request is protected from duplicate transfers.</p></div></div>
           {feedback && <p role={feedbackError ? "alert" : "status"} className={`rounded-xl px-3.5 py-2.5 text-xs ${feedbackError ? "bg-rose-400/10 text-rose-200" : "bg-emerald-400/10 text-emerald-200"}`}>{feedback}</p>}
-          {confirming ? <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-xs font-semibold text-slate-100">Review your transfer</p><p className="mt-2 text-xs text-slate-400">BDT {amount} from account ending {selectedAccount?.accountNumber.slice(-4)} to {normalizedRecipient}</p>{description.trim() && <p className="mt-1 text-xs text-slate-400">Note: {description.trim()}</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => void submitTransfer()} disabled={createState.isLoading} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-60">{createState.isLoading ? "Sending…" : "Confirm transfer"}</button><button type="button" onClick={() => setConfirming(false)} disabled={createState.isLoading} className="rounded-xl border border-white/[0.08] bg-[#10182b] px-4 py-2.5 text-xs font-semibold text-slate-400">Edit</button></div></div> : <button type="button" disabled={!selectedAccount || !amountValid || !recipientValid || exceedsBalance} onClick={() => { setFeedback(""); setConfirming(true); }} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40">Review transfer</button>}
+          {confirming ? <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4"><p className="text-xs font-semibold text-slate-100">Review your transfer</p><p className="mt-2 text-xs text-slate-400">BDT {amount} from account ending {selectedAccount?.accountNumber.slice(-4)} to {normalizedRecipient}</p>{description.trim() && <p className="mt-1 text-xs text-slate-400">Note: {description.trim()}</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => void submitTransfer()} disabled={createState.isLoading} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-60">{createState.isLoading ? "Sending…" : "Confirm transfer"}</button><button type="button" onClick={() => setConfirming(false)} disabled={createState.isLoading} className="rounded-xl border border-white/[0.08] bg-[#10182b] px-4 py-2.5 text-xs font-semibold text-slate-400">Edit</button></div></div> : <button type="button" disabled={!selectedAccount || !amountValid || !recipientValid || exceedsBalance || !/^\d{6}$/.test(transactionPin) || pinStatusLoading || pinStatusError || !pinStatus?.data.configured} onClick={() => { setFeedback(""); setConfirming(true); }} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40">Review transfer</button>}
         </div>
       </section>
       <TransferHistory/>

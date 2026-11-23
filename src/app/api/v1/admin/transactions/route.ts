@@ -1,6 +1,6 @@
 import { requireApiRoles } from "@/lib/admin-api";
 import { connectToDatabase } from "@/lib/mongodb";
-import { buildTransactionFilter, listTransactions } from "@/lib/transaction-queries";
+import { applyTransactionReviewFilters, buildTransactionFilter, listTransactions } from "@/lib/transaction-queries";
 import { transactionQuerySchema } from "@/lib/validation/transaction";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -18,8 +18,9 @@ export async function GET(request: NextRequest) {
 
   try {
     await connectToDatabase();
-    const data = await listTransactions(buildTransactionFilter(query.data), query.data);
-    return NextResponse.json({ status: "success", data });
+    const filter = await applyTransactionReviewFilters(buildTransactionFilter(query.data), query.data);
+    const data = await listTransactions(filter, query.data, true);
+    return NextResponse.json({ status: "success", data }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ status: "error", message: "Could not retrieve transactions." }, { status: 500 });
   }

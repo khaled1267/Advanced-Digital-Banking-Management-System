@@ -6,6 +6,12 @@ export const ACCOUNT_STATUSES = ["ACTIVE", "INACTIVE", "FROZEN", "CLOSED"] as co
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
+function validOptionalLimit(value: mongoose.Types.Decimal128 | null | undefined, positive: boolean) {
+  if (value == null) return true;
+  const paisa = parseBdtPaisa(value.toString());
+  return paisa !== null && (positive ? paisa > BigInt("0") : paisa >= BigInt("0"));
+}
+
 const bankAccountSchema = new Schema(
   {
     accountNumber: {
@@ -39,6 +45,43 @@ const bankAccountSchema = new Schema(
         },
         message: "Balance must be non-negative and use at most two decimal places.",
       },
+    },
+    // Optional so legacy accounts remain usable until an Admin configures limits.
+    transactionLimits: {
+      dailyTransferLimit: {
+        type: Schema.Types.Decimal128,
+        validate: {
+          validator(value: mongoose.Types.Decimal128 | undefined) {
+            return validOptionalLimit(value, true);
+          },
+          message: "Daily transfer limit must be a positive BDT amount.",
+        },
+      },
+      maximumSingleTransferAmount: {
+        type: Schema.Types.Decimal128,
+        validate: {
+          validator(value: mongoose.Types.Decimal128 | undefined) {
+            return validOptionalLimit(value, true);
+          },
+          message: "Maximum single transfer must be a positive BDT amount.",
+        },
+      },
+      minimumBalance: {
+        type: Schema.Types.Decimal128,
+        validate: {
+          validator(value: mongoose.Types.Decimal128 | undefined) {
+            return validOptionalLimit(value, false);
+          },
+          message: "Minimum balance must be a non-negative BDT amount.",
+        },
+      },
+    },
+    limitsUpdatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    limitsUpdatedAt: {
+      type: Date,
     },
     currency: {
       type: String,

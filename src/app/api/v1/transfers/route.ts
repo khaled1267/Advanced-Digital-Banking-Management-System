@@ -4,6 +4,7 @@ import { executeTransfer, TransferOperationError } from "@/lib/transfer-operatio
 import { getSafeTransaction } from "@/lib/transaction-queries";
 import { listMyTransfers } from "@/lib/transfer-queries";
 import { createTransferSchema, transferHistoryQuerySchema } from "@/lib/validation/transfer";
+import { verifyCustomerTransactionPin } from "@/lib/transaction-pin";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -22,6 +23,12 @@ function operationErrorResponse(error: TransferOperationError) {
       return errorResponse(400, "You cannot transfer money to your own account.");
     case "INSUFFICIENT_BALANCE":
       return errorResponse(409, "Your account does not have enough available balance.");
+    case "MINIMUM_BALANCE":
+      return errorResponse(409, "This transfer would go below your account's minimum balance.");
+    case "MAXIMUM_SINGLE_AMOUNT":
+      return errorResponse(409, "This transfer exceeds your account's maximum single transfer amount.");
+    case "DAILY_TRANSFER_LIMIT":
+      return errorResponse(409, "This transfer would exceed your account's daily transfer limit.");
     case "RECIPIENT_BALANCE_LIMIT":
       return errorResponse(409, "The recipient account cannot accept this amount.");
     case "IDEMPOTENCY_CONFLICT":
@@ -44,7 +51,15 @@ export async function POST(request: NextRequest) {
 
   try {
     await connectToDatabase();
-    const result = await executeTransfer(authorization.user._id, parsed.data);
+    const { transactionPin, ...transferInput } = parsed.data;
+    const pinResult = await verifyCustomerTransactionPin(authorization.user._id, transactionPin);
+    if (pinResult === "NOT_CONFIGURED") {
+      return errorResponse(409, "Set up your Transaction PIN in your Customer Profile before transferring money.");
+    }
+    if (pinResult !== "OK") {
+      return errorResponse(400, "Transaction PIN is incorrect or temporarily unavailable. Please try again later.");
+    }
+    const result = await executeTransfer(authorization.user._id, transferInput);
     const transfer = await getSafeTransaction(result.transaction);
     if (!transfer) return errorResponse(500, "Could not prepare the transfer response.");
     return NextResponse.json(
