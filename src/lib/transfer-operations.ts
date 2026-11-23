@@ -3,6 +3,7 @@ import { formatBdtPaisa, MAX_BDT_PAISA, parseBdtPaisa } from "@/lib/bdt-money";
 import { BankAccount } from "@/models/BankAccount";
 import { Transaction } from "@/models/Transaction";
 import { User } from "@/models/User";
+import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
 import type { CreateTransferInput } from "@/lib/validation/transfer";
 
 export class TransferOperationError extends Error {
@@ -150,6 +151,26 @@ async function executeInSession(
     createdBy: customerId,
     idempotencyKey: input.idempotencyKey,
   }], { session });
+  const displayAmount = formatNotificationAmount(input.amount) ?? "your transfer";
+  const reference = transaction.transactionId;
+  await createNotification({
+    userId: customerId,
+    type: "TRANSFER_COMPLETED",
+    title: "Transfer Completed",
+    message: `Your transfer of ${displayAmount} was completed successfully. Ref: ${reference}.`,
+    dedupeKey: `transfer:${transaction._id}:sender`,
+    relatedEntityType: "transaction",
+    relatedEntityId: transaction._id,
+  }, session);
+  await createNotification({
+    userId: recipient.userId,
+    type: "MONEY_RECEIVED",
+    title: "Money Received",
+    message: `You have received ${displayAmount} in your account. Ref: ${reference}.`,
+    dedupeKey: `transfer:${transaction._id}:receiver`,
+    relatedEntityType: "transaction",
+    relatedEntityId: transaction._id,
+  }, session);
   return { transaction, replayed: false };
 }
 

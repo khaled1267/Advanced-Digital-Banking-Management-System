@@ -4,6 +4,7 @@ import { BankAccount } from "@/models/BankAccount";
 import { Loan } from "@/models/Loan";
 import { LoanRepayment, type LoanRepaymentDocument } from "@/models/LoanRepayment";
 import { Transaction } from "@/models/Transaction";
+import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
 import type { ApproveLoanInput, CreateLoanInput, CreateLoanRepaymentInput } from "@/lib/validation/loan";
 
 export class LoanOperationError extends Error {
@@ -335,23 +336,46 @@ export async function approveLoanApplication(
   const approvedAmountDecimal = approvedAmount
     ? mongoose.Types.Decimal128.fromString(approvedAmount)
     : undefined;
-  const loan = await Loan.findOneAndUpdate(
-    {
-      _id: loanId,
-      status: "FORWARDED_TO_ADMIN",
-      ...(approvedAmountDecimal ? { amount: { $gte: approvedAmountDecimal } } : {}),
-    },
-    {
-      $set: {
-        status: "APPROVED",
-        approvedBy: adminId,
-        approvedAt,
-        ...(approvedAmountDecimal ? { approvedAmount: approvedAmountDecimal } : {}),
-      },
-      $unset: { activeAccountId: 1 },
-    },
-    { returnDocument: "after", runValidators: true },
-  );
+  const session = await mongoose.startSession();
+  let approvedLoanId: string | null = null;
+  try {
+    await session.withTransaction(async () => {
+      const loan = await Loan.findOneAndUpdate(
+        {
+          _id: loanId,
+          status: "FORWARDED_TO_ADMIN",
+          ...(approvedAmountDecimal ? { amount: { $gte: approvedAmountDecimal } } : {}),
+        },
+        {
+          $set: {
+            status: "APPROVED",
+            approvedBy: adminId,
+            approvedAt,
+            ...(approvedAmountDecimal ? { approvedAmount: approvedAmountDecimal } : {}),
+          },
+          $unset: { activeAccountId: 1 },
+        },
+        { returnDocument: "after", runValidators: true, session },
+      );
+      if (loan) {
+        approvedLoanId = loan._id.toString();
+        const approvedDisplayAmount = loan.approvedAmount?.toString();
+        const formattedAmount = approvedDisplayAmount ? formatNotificationAmount(approvedDisplayAmount) : null;
+        await createNotification({
+          userId: loan.customerId,
+          type: "LOAN_APPROVED",
+          title: "Loan Approved",
+          message: formattedAmount ? `Your loan application for ${formattedAmount} has been approved.` : "Your loan application has been approved.",
+          dedupeKey: `loan:${loan._id}:approved`,
+          relatedEntityType: "loan",
+          relatedEntityId: loan._id,
+        }, session);
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+  const loan = approvedLoanId ? await Loan.findById(approvedLoanId) : null;
   if (loan) return loan;
   const existing = await Loan.findById(loanId).select("status amount");
   if (!existing) throw new LoanOperationError("NOT_FOUND");
@@ -376,19 +400,35 @@ export async function rejectLoanApplication(
   rejectionReason: string,
 ) {
   const rejectedAt = new Date();
-  const loan = await Loan.findOneAndUpdate(
-    { _id: loanId, status: "FORWARDED_TO_ADMIN" },
-    {
-      $set: {
-        status: "REJECTED",
-        rejectedBy: adminId,
-        rejectedAt,
-        rejectionReason,
-      },
-      $unset: { activeAccountId: 1 },
-    },
-    { returnDocument: "after", runValidators: true },
-  );
+  const session = await mongoose.startSession();
+  let rejectedLoanId: string | null = null;
+  try {
+    await session.withTransaction(async () => {
+      const loan = await Loan.findOneAndUpdate(
+        { _id: loanId, status: "FORWARDED_TO_ADMIN" },
+        {
+          $set: { status: "REJECTED", rejectedBy: adminId, rejectedAt, rejectionReason },
+          $unset: { activeAccountId: 1 },
+        },
+        { returnDocument: "after", runValidators: true, session },
+      );
+      if (loan) {
+        rejectedLoanId = loan._id.toString();
+        await createNotification({
+          userId: loan.customerId,
+          type: "LOAN_REJECTED",
+          title: "Loan Application Rejected",
+          message: "Your loan application was not approved.",
+          dedupeKey: `loan:${loan._id}:rejected`,
+          relatedEntityType: "loan",
+          relatedEntityId: loan._id,
+        }, session);
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+  const loan = rejectedLoanId ? await Loan.findById(rejectedLoanId) : null;
   if (loan) return loan;
   const existing = await Loan.exists({ _id: loanId });
   throw new LoanOperationError(existing ? "CONFLICT" : "NOT_FOUND");

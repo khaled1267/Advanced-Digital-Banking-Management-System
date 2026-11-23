@@ -6,6 +6,7 @@ import { useDispatch } from "react-redux";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import {
   Activity,
+  Bell,
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
@@ -30,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { DashboardOverview } from "@/components/DashboardOverview";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useCurrentUserQuery, useLogoutMutation } from "@/store/authApi";
 import { baseApi } from "@/store/api";
 import type { AppDispatch } from "@/store/store";
@@ -48,6 +50,16 @@ function getThemeSnapshot(): DashboardTheme {
 
 function getServerThemeSnapshot(): DashboardTheme {
   return "dark";
+}
+
+function UserAvatar({ name, imageUrl, className }: { name: string; imageUrl?: string | null; className: string }) {
+  const initials = name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  return <div
+    role="img"
+    aria-label={imageUrl ? `Profile picture of ${name}` : `Initials for ${name}`}
+    className={`${className} ${imageUrl ? "bg-cover bg-center" : ""}`}
+    style={imageUrl ? { backgroundImage: `url("${imageUrl}")` } : undefined}
+  >{imageUrl ? null : initials}</div>;
 }
 
 function subscribeToTheme(onChange: () => void) {
@@ -106,7 +118,8 @@ const roleContent: Record<DashboardRole, { workspace: string; title: string; nav
       { label: "My Transactions", icon: Activity, href: "/transactions" },
       { label: "Statements", icon: FileText, href: "/statements" },
       { label: "My Loans", icon: HandCoins, href: "/loans" },
-      { label: "Profile", icon: UserRound },
+      { label: "Notifications", icon: Bell, href: "/notifications" },
+      { label: "Profile", icon: UserRound, href: "/profile" },
       { label: "Settings", icon: Settings },
     ],
   },
@@ -129,7 +142,6 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
   const content = roleContent[role];
   const sessionUser = sessionResponse?.data.user;
   const displayName = sessionUser?.name ?? "Bank user";
-  const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
   const currentNavItem = content.nav.find((item) => item.href?.split("#")[0] === pathname);
   const pageTitle = pathname === "/admin/users"
@@ -269,7 +281,7 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
         </button>
 
         <div className="mt-5 flex items-center gap-3 border-t border-white/[0.07] px-1 pt-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-400/15 text-xs font-semibold text-blue-200">{initials}</div>
+          <UserAvatar name={displayName} imageUrl={sessionUser?.profileImageUrl} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-400/15 text-xs font-semibold text-blue-200" />
           <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-200">{displayName}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{sessionUser?.email ?? content.workspace}</p></div>
           <button type="button" onClick={handleLogout} disabled={isLoggingOut} className="dashboard-interactive rounded-lg p-2 text-slate-500 transition hover:bg-white/[0.06] hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:opacity-50" aria-label={isLoggingOut ? "Logging out" : "Log out"} aria-busy={isLoggingOut} title={isLoggingOut ? "Logging out…" : "Log out"}>{isLoggingOut ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={16} /> : <LogOut size={16} />}</button>
         </div>
@@ -295,7 +307,8 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
               {desktopSidebarOpen ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
             </button>
             <span className="hidden items-center gap-1.5 rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-2.5 py-1 text-[10px] font-medium text-emerald-200 sm:flex"><ShieldCheck size={12} /> Secure session</span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-400/15 text-[11px] font-semibold text-blue-200 sm:hidden">{initials}</div><div className="hidden items-center gap-2.5 sm:flex"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-400/15 text-[11px] font-semibold text-blue-200">{initials}</div><span className="max-w-36 truncate text-xs font-semibold text-slate-300">{displayName}</span></div>
+            {role === "customer" && <NotificationBell />}
+            <div className="sm:hidden"><UserAvatar name={displayName} imageUrl={sessionUser?.profileImageUrl} className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-400/15 text-[11px] font-semibold text-blue-200" /></div><div className="hidden items-center gap-2.5 sm:flex"><UserAvatar name={displayName} imageUrl={sessionUser?.profileImageUrl} className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-400/15 text-[11px] font-semibold text-blue-200" /><span className="max-w-36 truncate text-xs font-semibold text-slate-300">{displayName}</span></div>
           </div>
         </header>
 

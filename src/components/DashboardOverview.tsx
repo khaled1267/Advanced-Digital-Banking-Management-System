@@ -15,16 +15,8 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { CustomerAccountsPanel } from "@/components/CustomerAccountsPanel";
+import { DashboardAnalytics } from "@/components/DashboardAnalytics";
 import type { DashboardRole } from "@/components/DashboardShell";
 import { useGetAdminUsersQuery } from "@/store/adminUsersApi";
 import { useGetAdminAccountsQuery, useGetMyAccountsQuery } from "@/store/bankAccountsApi";
@@ -36,7 +28,6 @@ import { useGetAdminLoansQuery, useGetMyLoanSummaryQuery, useGetStaffLoansQuery 
 type Icon = ComponentType<{ size?: number; className?: string }>;
 type Metric = { label: string; value: string; detail: string; icon: Icon; error?: boolean; loading?: boolean; animationTarget?: bigint; animationFormat?: "money" | "integer"; accent?: "blue" | "cyan" | "violet" | "amber" };
 type LinkAction = { label: string; description: string; icon: Icon; href: string };
-type ActivityPoint = { day: string; incoming: number; outgoing: number };
 
 const sevenDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const sevenDaysFromNow = new Date().toISOString().slice(0, 10);
@@ -93,37 +84,6 @@ function dateLabel(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function activityFromTransactions(transactions: TransactionRecord[], role: DashboardRole, ownAccountIds: Set<string>): ActivityPoint[] {
-  const points = new Map<string, ActivityPoint>();
-  for (let dayOffset = 6; dayOffset >= 0; dayOffset -= 1) {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - dayOffset);
-    const key = date.toISOString().slice(0, 10);
-    points.set(key, { day: new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date), incoming: 0, outgoing: 0 });
-  }
-
-  for (const transaction of transactions) {
-    if (transaction.status !== "COMPLETED") continue;
-    const key = transaction.createdAt.slice(0, 10);
-    const point = points.get(key);
-    if (!point) continue;
-    const amount = Number(toPaisa(transaction.amount)) / 100;
-    if (role === "admin" || role === "staff") {
-      if (transaction.transactionType === "DEPOSIT" || transaction.transactionType === "LOAN_DISBURSEMENT") point.incoming += amount;
-      if (transaction.transactionType === "WITHDRAWAL" || transaction.transactionType === "LOAN_REPAYMENT") point.outgoing += amount;
-      continue;
-    }
-    if (transaction.transactionType === "DEPOSIT" || transaction.transactionType === "LOAN_DISBURSEMENT") point.incoming += amount;
-    else if (transaction.transactionType === "WITHDRAWAL" || transaction.transactionType === "LOAN_REPAYMENT") point.outgoing += amount;
-    else if (transaction.transactionType === "TRANSFER") {
-      if (transaction.toAccount && ownAccountIds.has(transaction.toAccount.id)) point.incoming += amount;
-      else if (transaction.fromAccount && ownAccountIds.has(transaction.fromAccount.id)) point.outgoing += amount;
-    }
-  }
-  return [...points.values()];
-}
-
 function MetricCard({ metric, delay = 0 }: { metric: Metric; delay?: number }) {
   const Icon = metric.icon;
   const value = metric.loading
@@ -148,18 +108,6 @@ function Panel({ title, detail, href, children, className = "" }: { title: strin
 
 function EmptyState({ children }: { children: ReactNode }) {
   return <div className="mt-5 rounded-xl border border-dashed border-white/10 px-4 py-7 text-center text-xs text-slate-400">{children}</div>;
-}
-
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(true);
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setPrefersReducedMotion(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  return prefersReducedMotion;
 }
 
 function LoadError({ onRetry }: { onRetry: () => void }) {
@@ -196,20 +144,6 @@ function RecentTransactions({ transactions, loading, error, onRetry, href, ownAc
   </Panel>;
 }
 
-function ActivityChart({ data, loading, error, onRetry, role, total }: { data: ActivityPoint[]; loading: boolean; error: boolean; onRetry: () => void; role: DashboardRole; total: number }) {
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const label = role === "customer" ? "Your completed cash flow" : "Completed deposit and withdrawal volume";
-  return <Panel title="7-day activity" detail={`${label} · based on up to 100 recent transactions`}>
-    {loading ? <div className="dashboard-skeleton mt-5 h-[230px] rounded-xl bg-white/[0.04]" role="status" aria-label="Loading activity chart"/> : error ? <LoadError onRetry={onRetry}/> : total === 0 ? <EmptyState>There is no completed transaction activity in the last 7 days.</EmptyState> : <div className="dashboard-content-enter mt-4 h-[235px] w-full" role="img" aria-label="Seven day account activity chart">
-      <ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
-        <defs><linearGradient id="dashIncoming" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--dashboard-chart-primary)" stopOpacity={0.32}/><stop offset="95%" stopColor="var(--dashboard-chart-primary)" stopOpacity={0}/></linearGradient><linearGradient id="dashOutgoing" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--dashboard-chart-secondary)" stopOpacity={0.2}/><stop offset="95%" stopColor="var(--dashboard-chart-secondary)" stopOpacity={0}/></linearGradient></defs>
-        <CartesianGrid vertical={false} stroke="var(--dashboard-chart-grid)" strokeDasharray="3 5"/><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "var(--dashboard-chart-label)", fontSize: 10 }}/><YAxis axisLine={false} tickLine={false} tick={{ fill: "var(--dashboard-chart-label)", fontSize: 9 }} tickFormatter={(value: number) => value >= 1000 ? `${Math.round(value / 1000)}k` : String(value)}/>
-        <Tooltip wrapperStyle={{ transition: "opacity 150ms ease-out" }} contentStyle={{ borderRadius: 12, background: "var(--dashboard-tooltip-bg)", borderColor: "var(--dashboard-border-color)", color: "var(--dashboard-text)", fontSize: 11 }} formatter={(value) => [`BDT ${Number(value).toLocaleString("en-BD", { maximumFractionDigits: 2 })}`, ""]}/>
-        <Area isAnimationActive={!prefersReducedMotion} animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="incoming" name="Incoming" stroke="var(--dashboard-chart-primary)" strokeWidth={2} fill="url(#dashIncoming)"/><Area isAnimationActive={!prefersReducedMotion} animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="outgoing" name="Outgoing" stroke="var(--dashboard-chart-secondary)" strokeWidth={2} fill="url(#dashOutgoing)"/>
-      </AreaChart></ResponsiveContainer></div>}
-  </Panel>;
-}
-
 function RequestStatusPanel({ title, detail, pending, approved, rejected, href, loading, error, onRetry }: {
   title: string; detail: string; pending?: number; approved?: number; rejected?: number; href: string; loading: boolean; error: boolean; onRetry: () => void;
 }) {
@@ -232,7 +166,7 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
   const customerAccounts = useGetMyAccountsQuery(undefined, { skip: !isCustomer });
   const managedAccounts = useGetAdminAccountsQuery({ page: 1, limit: role === "staff" ? 5 : 1 }, { skip: isCustomer });
   const customerTransactions = useGetMyTransactionsQuery({ page: 1, limit: 8, startDate: sevenDaysAgo, endDate: sevenDaysFromNow }, { skip: !isCustomer });
-  const managedTransactions = useGetAdminTransactionsQuery({ page: 1, limit: 100, startDate: sevenDaysAgo, endDate: sevenDaysFromNow }, { skip: isCustomer });
+  const managedTransactions = useGetAdminTransactionsQuery({ page: 1, limit: 5, startDate: sevenDaysAgo, endDate: sevenDaysFromNow }, { skip: isCustomer });
   const customerDeposits = useGetMyDepositsQuery({ page: 1, limit: 5 }, { skip: !isCustomer });
   const managedDeposits = useGetAdminDepositsQuery({ page: 1, limit: 5 }, { skip: isCustomer });
   const customerWithdrawals = useGetMyWithdrawalsQuery({ page: 1, limit: 5 }, { skip: !isCustomer });
@@ -251,8 +185,6 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
   const withdrawalData = isCustomer ? customerWithdrawals.data?.data : managedWithdrawals.data?.data;
   const withdrawalQuery = isCustomer ? customerWithdrawals : managedWithdrawals;
   const ownAccountIds = new Set(accounts.map((account) => account.id));
-  const activity = activityFromTransactions(transactions, role, ownAccountIds);
-  const transactionCount = activity.reduce((sum, point) => sum + point.incoming + point.outgoing, 0);
   const totalBalance = accounts.reduce((sum, account) => sum + toPaisa(account.balance), BigInt("0"));
 
   const customerMetrics: Metric[] = [
@@ -306,7 +238,6 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
 
     <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(310px,0.85fr)]">
       <div className="grid min-w-0 gap-5">
-        <ActivityChart data={activity} loading={transactionQuery.isLoading} error={transactionQuery.isError} onRetry={() => void transactionQuery.refetch()} role={role} total={transactionCount}/>
         <RecentTransactions transactions={transactions} loading={transactionQuery.isLoading} error={transactionQuery.isError} onRetry={() => void transactionQuery.refetch()} href={isCustomer ? "/transactions" : "/admin/transactions"} ownAccountIds={ownAccountIds} role={role}/>
         {role === "staff" && <Panel title="Customer account overview" detail="Recent account holders available to your role" href="/admin/accounts">
           {managedAccounts.isLoading ? <div role="status" className="dashboard-skeleton mt-4 h-24 rounded-xl bg-white/[0.04]"/> : managedAccounts.isError ? <LoadError onRetry={() => void managedAccounts.refetch()}/> : managedAccounts.data?.data.accounts.length ? <div className="dashboard-content-enter mt-3 divide-y divide-white/[0.06]">{managedAccounts.data.data.accounts.map((account, index) => <div key={account.id} style={{ "--dashboard-delay": `${index * 30}ms` } as CSSProperties} className="dashboard-row-enter flex items-center gap-3 rounded-lg py-3 transition-colors hover:bg-white/[0.035]"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-400/10 text-blue-200"><Building2 size={15}/></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-200">{account.accountHolder?.name ?? "Customer unavailable"}</p><p className="mt-1 truncate font-mono text-[10px] text-slate-500">{account.accountNumber} · {account.accountType}</p></div><span className={`rounded-full px-2 py-1 text-[9px] font-semibold transition-colors ${account.status === "ACTIVE" ? "bg-emerald-300/10 text-emerald-200" : "bg-slate-300/10 text-slate-300"}`}>{account.status}</span></div>)}</div> : <EmptyState>No customer accounts available.</EmptyState>}
@@ -327,6 +258,7 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
         <QuickActions actions={actions}/>
       </div>
     </div>
+    <DashboardAnalytics role={role}/>
     <footer className="mt-8 flex flex-wrap justify-between gap-2 border-t border-white/[0.07] pt-4 text-[10px] text-slate-500"><span>Northstar Bank · Secure banking workspace</span><span>Figures come from data available to your role.</span></footer>
   </div>;
 }

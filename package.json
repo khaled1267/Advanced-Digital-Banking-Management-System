@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/user-security.test.ts"
+    "test": "tsx --test tests/user-security.test.ts tests/profile.test.ts tests/notifications.test.ts"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.15.0",

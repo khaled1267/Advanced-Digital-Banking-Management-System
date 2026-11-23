@@ -12,6 +12,7 @@ import { Deposit } from "../src/models/Deposit";
 import { Withdrawal } from "../src/models/Withdrawal";
 import { Loan } from "../src/models/Loan";
 import { LoanRepayment } from "../src/models/LoanRepayment";
+import { Notification } from "../src/models/Notification";
 import { connectToDatabase } from "../src/lib/mongodb";
 import { hashPassword, verifyPassword } from "../src/lib/password";
 import { POST as login } from "../src/app/api/v1/auth/login/route";
@@ -603,7 +604,7 @@ test(
 
     try {
       await connectToDatabase();
-      await Loan.init();
+      await Promise.all([Loan.init(), Notification.init()]);
       const [admin, staff, customer] = await User.create([
         { name: "Loan Decision Admin", email: emails.admin, passwordHash, role: "ADMIN" },
         { name: "Loan Decision Staff", email: emails.staff, passwordHash, role: "STAFF" },
@@ -674,7 +675,12 @@ test(
       assert.equal(approvedStored?.approvedAmount?.toString(), "15000.25");
       assert.ok(approvedStored?.approvedAt instanceof Date);
       assert.equal(approvedStored?.activeAccountId, undefined);
+      const approvedNotifications = await Notification.find({ userId: customer._id, dedupeKey: `loan:${approvalLoan._id}:approved` });
+      assert.equal(approvedNotifications.length, 1);
+      assert.equal(approvedNotifications[0].type, "LOAN_APPROVED");
+      assert.match(approvedNotifications[0].message, /৳15,000\.25/);
       assert.equal((await approveRequest(approvalLoan._id, tokens.admin)).status, 409);
+      assert.equal(await Notification.countDocuments({ userId: customer._id, dedupeKey: `loan:${approvalLoan._id}:approved` }), 1);
       assert.equal((await rejectRequest(approvalLoan._id, tokens.admin, { rejectionReason: "Cannot change an approved decision." })).status, 409);
 
       const rejectionReason = "The application does not meet the current lending criteria.";
@@ -688,6 +694,10 @@ test(
       assert.ok(rejectedStored?.rejectedAt instanceof Date);
       assert.equal(rejectedStored?.rejectionReason, rejectionReason);
       assert.equal(rejectedStored?.activeAccountId, undefined);
+      const rejectedNotifications = await Notification.find({ userId: customer._id, dedupeKey: `loan:${rejectionLoan._id}:rejected` });
+      assert.equal(rejectedNotifications.length, 1);
+      assert.equal(rejectedNotifications[0].type, "LOAN_REJECTED");
+      assert.equal(rejectedNotifications[0].message.includes(rejectionReason), false);
       assert.equal((await rejectRequest(rejectionLoan._id, tokens.admin, { rejectionReason })).status, 409);
       assert.equal((await approveRequest(rejectionLoan._id, tokens.admin)).status, 409);
 
@@ -714,6 +724,7 @@ test(
       assert.equal(await Transaction.countDocuments({ $or: [{ fromAccount: { $in: accountIds } }, { toAccount: { $in: accountIds } }] }), beforeTransactionCount);
     } finally {
       if (mongoose.connection.readyState === 1) {
+        await Notification.deleteMany({ userId: { $in: customerIds } });
         await Loan.deleteMany({ _id: { $in: loanIds } });
         await BankAccount.deleteMany({ _id: { $in: accountIds } });
         await User.deleteMany({ email: { $in: Object.values(emails) } });
@@ -2673,6 +2684,7 @@ test(
       await BankAccount.init();
       await Deposit.init();
       await Transaction.init();
+      await Notification.init();
 
       // Explicitly verify replica-set/Atlas transaction support before fixture creation.
       const capabilitySession = await mongoose.startSession();
@@ -2783,6 +2795,7 @@ test(
       assert.equal((await reviewRequest(rejectionId, tokens.staff, {
         action: "REJECT", rejectionReason: "Receipt could not be verified",
       })).status, 200);
+      assert.equal(await Notification.countDocuments({ userId: customer._id, relatedEntityId: rejectionId }), 0);
       assert.equal((await BankAccount.findById(activeAccount._id))?.balance.toString(), "100.00");
       assert.equal(await Transaction.countDocuments({ createdBy: customer._id, toAccount: activeAccount._id }), 0);
       assert.equal((await reviewRequest(rejectionId, tokens.admin, { action: "APPROVE" })).status, 409);
@@ -2797,7 +2810,9 @@ test(
       assert.equal(completedDepositTransactions.length, 1);
       assert.equal(completedDepositTransactions[0].amount.toString(), "125.55");
       assert.equal(completedDepositTransactions[0]._id.toString(), approved?.transactionId?.toString());
+      assert.equal(await Notification.countDocuments({ userId: customer._id, dedupeKey: `deposit:${approved?._id}:approved`, type: "DEPOSIT_APPROVED" }), 1);
       assert.equal((await reviewRequest(main.body.data.deposit.id, tokens.staff, { action: "APPROVE" })).status, 409);
+      assert.equal(await Notification.countDocuments({ userId: customer._id, dedupeKey: `deposit:${approved?._id}:approved` }), 1);
       assert.equal((await BankAccount.findById(activeAccount._id))?.balance.toString(), "225.55");
       assert.equal(await Transaction.countDocuments({ createdBy: customer._id, toAccount: activeAccount._id }), 1);
 
@@ -2824,10 +2839,12 @@ test(
       assert.equal((await Deposit.findById(rollbackId))?.status, "PENDING");
       assert.equal((await BankAccount.findById(activeAccount._id))?.balance.toString(), "230.05");
       assert.equal(await Transaction.countDocuments({ createdBy: customer._id, toAccount: activeAccount._id }), 2);
+      assert.equal(await Notification.countDocuments({ userId: customer._id, relatedEntityId: rollbackId }), 0);
     } finally {
       Transaction.create = originalTransactionCreate;
       if (mongoose.connection.readyState === 1) {
         const customer = await User.findOne({ email: emails.customer }).select("_id");
+        if (customer) await Notification.deleteMany({ userId: customer._id });
         await Deposit.deleteMany({ _id: { $in: depositIds } });
         if (customer) await Transaction.deleteMany({ createdBy: customer._id, toAccount: { $in: accountIds } });
         assert.equal(await Transaction.countDocuments({ toAccount: { $in: accountIds } }), 0);
@@ -2907,6 +2924,7 @@ test(
       await BankAccount.init();
       await Withdrawal.init();
       await Transaction.init();
+      await Notification.init();
 
       // Verify the configured Atlas deployment can run a transaction before creating fixtures.
       const capabilitySession = await mongoose.startSession();
@@ -3031,9 +3049,13 @@ test(
       const rejectionId = rejection.body.data.withdrawal.id;
       assert.equal((await reviewRequest(rejectionId, tokens.staff, { action: "REJECT", rejectionReason: "Customer request cancelled" })).status, 200);
       assert.equal((await Withdrawal.findById(rejectionId))?.status, "REJECTED");
+      assert.equal(await Notification.countDocuments({ userId: customer._id, dedupeKey: `withdrawal:${rejectionId}:rejected`, type: "WITHDRAWAL_REJECTED" }), 1);
+      assert.equal((await Notification.findOne({ dedupeKey: `withdrawal:${rejectionId}:rejected` }))?.message.includes("Customer request cancelled"), false);
       assert.equal((await BankAccount.findById(activeAccount._id))?.balance.toString(), "39.75");
       assert.equal(await Transaction.countDocuments({ createdBy: customer._id, fromAccount: activeAccount._id }), 1);
       assert.equal((await reviewRequest(rejectionId, tokens.admin, { action: "APPROVE" })).status, 409);
+      assert.equal((await reviewRequest(rejectionId, tokens.admin, { action: "REJECT", rejectionReason: "Customer request cancelled" })).status, 409);
+      assert.equal(await Notification.countDocuments({ userId: customer._id, dedupeKey: `withdrawal:${rejectionId}:rejected` }), 1);
 
       await BankAccount.updateOne({ _id: activeAccount._id }, { $inc: { balance: mongoose.Types.Decimal128.fromString("5.00") } });
       assert.equal((await BankAccount.findById(activeAccount._id))?.balance.toString(), "44.75");
@@ -3083,6 +3105,7 @@ test(
       Transaction.create = originalTransactionCreate;
       if (mongoose.connection.readyState === 1) {
         const customer = await User.findOne({ email: emails.customer }).select("_id");
+        if (customer) await Notification.deleteMany({ userId: customer._id });
         await Withdrawal.deleteMany({ _id: { $in: withdrawalIds } });
         if (customer) await Transaction.deleteMany({ createdBy: customer._id, fromAccount: { $in: accountIds } });
         assert.equal(await Transaction.countDocuments({ fromAccount: { $in: accountIds } }), 0);
@@ -3151,6 +3174,7 @@ test(
       await User.init();
       await BankAccount.init();
       await Transaction.init();
+      await Notification.init();
       const capabilitySession = await mongoose.startSession();
       try {
         await capabilitySession.withTransaction(async () => {
@@ -3199,6 +3223,9 @@ test(
       assert.equal((await BankAccount.findById(source._id))?.balance.toString(), "69.75");
       assert.equal((await BankAccount.findById(destination._id))?.balance.toString(), "40.25");
       assert.equal(await Transaction.countDocuments({ idempotencyKey: transferBody.idempotencyKey }), 1);
+      assert.equal(await Notification.countDocuments({ userId: sender._id, type: "TRANSFER_COMPLETED", relatedEntityId: createdBody.data.transfer.id }), 1);
+      assert.equal(await Notification.countDocuments({ userId: recipient._id, type: "MONEY_RECEIVED", relatedEntityId: createdBody.data.transfer.id }), 1);
+      assert.equal(await Notification.countDocuments({ userId: unrelated._id, relatedEntityId: createdBody.data.transfer.id }), 0);
       await assert.rejects(
         () => Transaction.create({
           transactionType: "TRANSFER",
@@ -3217,6 +3244,7 @@ test(
       assert.equal(replayResponse.status, 200);
       assert.equal(replayBody.data.replayed, true);
       assert.equal(replayBody.data.transfer.id, createdBody.data.transfer.id);
+      assert.equal(await Notification.countDocuments({ relatedEntityId: createdBody.data.transfer.id }), 2);
       assert.equal((await BankAccount.findById(source._id))?.balance.toString(), "69.75");
       assert.equal((await BankAccount.findById(destination._id))?.balance.toString(), "40.25");
 
@@ -3277,10 +3305,14 @@ test(
       assert.equal((await BankAccount.findById(source._id))?.balance.toString(), "64.75");
       assert.equal((await BankAccount.findById(destination._id))?.balance.toString(), "45.25");
       assert.equal(await Transaction.countDocuments({ idempotencyKey: failedBody.idempotencyKey }), 0);
+      assert.equal(await Notification.countDocuments({ userId: sender._id, type: "TRANSFER_COMPLETED", message: /৳3\.00/ }), 0);
+      assert.equal(await Notification.countDocuments({ userId: recipient._id, type: "MONEY_RECEIVED", message: /৳3\.00/ }), 0);
       Transaction.create = originalTransactionCreate;
     } finally {
       Transaction.create = originalTransactionCreate;
       if (mongoose.connection.readyState === 1) {
+        const owners = await User.find({ email: { $in: Object.values(emails) } }).distinct("_id");
+        await Notification.deleteMany({ userId: { $in: owners } });
         await Transaction.deleteMany({ $or: [{ fromAccount: { $in: accountIds } }, { toAccount: { $in: accountIds } }] });
         await BankAccount.deleteMany({ _id: { $in: accountIds } });
         await User.deleteMany({ email: { $in: Object.values(emails) } });

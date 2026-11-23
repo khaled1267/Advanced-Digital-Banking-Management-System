@@ -3,6 +3,7 @@ import { parseBdtPaisa } from "@/lib/bdt-money";
 import { BankAccount } from "@/models/BankAccount";
 import { Transaction } from "@/models/Transaction";
 import { Withdrawal } from "@/models/Withdrawal";
+import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
 
 export class WithdrawalOperationError extends Error {
   constructor(readonly code: "NOT_FOUND" | "CONFLICT" | "ACCOUNT_UNAVAILABLE" | "INSUFFICIENT_BALANCE") {
@@ -89,21 +90,36 @@ export async function reviewWithdrawalRequest(
   rejectionReason?: string,
 ) {
   if (action === "REJECT") {
-    const updated = await Withdrawal.findOneAndUpdate(
-      { _id: withdrawalId, status: "PENDING" },
-      {
-        $set: {
-          status: "REJECTED",
-          reviewedBy: reviewerId,
-          reviewedAt: new Date(),
-          rejectionReason,
-        },
-      },
-      { returnDocument: "after", runValidators: true },
-    );
-    if (updated) return updated;
-    const existing = await Withdrawal.exists({ _id: withdrawalId });
-    throw new WithdrawalOperationError(existing ? "CONFLICT" : "NOT_FOUND");
+    const session = await mongoose.startSession();
+    try {
+      let rejectedId: string | undefined;
+      await session.withTransaction(async () => {
+        const withdrawal = await pendingWithdrawal(withdrawalId, session);
+        const updated = await Withdrawal.findOneAndUpdate(
+          { _id: withdrawal._id, status: "PENDING" },
+          { $set: { status: "REJECTED", reviewedBy: reviewerId, reviewedAt: new Date(), rejectionReason } },
+          { returnDocument: "after", runValidators: true, session },
+        );
+        if (!updated) throw new WithdrawalOperationError("CONFLICT");
+        const amount = formatNotificationAmount(withdrawal.amount.toString());
+        await createNotification({
+          userId: withdrawal.customerId,
+          type: "WITHDRAWAL_REJECTED",
+          title: "Withdrawal Rejected",
+          message: `Your withdrawal request of ${amount ?? "the requested amount"} was rejected.`,
+          dedupeKey: `withdrawal:${withdrawal._id}:rejected`,
+          relatedEntityType: "withdrawal",
+          relatedEntityId: withdrawal._id,
+        }, session);
+        rejectedId = withdrawal._id.toString();
+      });
+      if (!rejectedId) throw new Error("Withdrawal rejection transaction returned no result.");
+      const rejected = await Withdrawal.findById(rejectedId);
+      if (!rejected) throw new Error("Rejected withdrawal could not be reloaded.");
+      return rejected;
+    } finally {
+      await session.endSession();
+    }
   }
 
   const session = await mongoose.startSession();

@@ -3,6 +3,7 @@ import { formatBdtPaisa, MAX_BDT_PAISA, parseBdtPaisa } from "@/lib/bdt-money";
 import { Deposit } from "@/models/Deposit";
 import { BankAccount } from "@/models/BankAccount";
 import { Transaction } from "@/models/Transaction";
+import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
 
 export class DepositOperationError extends Error {
   constructor(readonly code: "NOT_FOUND" | "CONFLICT" | "ACCOUNT_UNAVAILABLE" | "BALANCE_LIMIT") {
@@ -69,6 +70,16 @@ async function approveDeposit(depositId: string, reviewerId: mongoose.Types.Obje
     { session },
   );
   if (transitioned.modifiedCount !== 1) throw new DepositOperationError("CONFLICT");
+  const amount = formatNotificationAmount(amountString);
+  await createNotification({
+    userId: deposit.customerId,
+    type: "DEPOSIT_APPROVED",
+    title: "Deposit Approved",
+    message: `Your deposit request of ${amount ?? "the requested amount"} has been approved.`,
+    dedupeKey: `deposit:${deposit._id}:approved`,
+    relatedEntityType: "deposit",
+    relatedEntityId: deposit._id,
+  }, session);
   return deposit._id.toString();
 }
 

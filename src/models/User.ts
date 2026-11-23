@@ -19,6 +19,16 @@ const userSchema = new Schema(
       lowercase: true,
       trim: true,
     },
+    profileImageUrl: {
+      type: String,
+      trim: true,
+      maxlength: 2048,
+    },
+    profileImagePublicId: {
+      type: String,
+      trim: true,
+      maxlength: 255,
+    },
     passwordHash: {
       type: String,
       required: true,
