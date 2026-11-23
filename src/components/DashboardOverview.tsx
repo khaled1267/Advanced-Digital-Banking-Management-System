@@ -124,18 +124,18 @@ function activityFromTransactions(transactions: TransactionRecord[], role: Dashb
   return [...points.values()];
 }
 
-function MetricCard({ metric, featured = false, delay = 0 }: { metric: Metric; featured?: boolean; delay?: number }) {
+function MetricCard({ metric, delay = 0 }: { metric: Metric; delay?: number }) {
   const Icon = metric.icon;
   const value = metric.loading
     ? <span className="dashboard-skeleton inline-block h-8 w-28 rounded-lg bg-white/[0.06]" aria-label="Loading" />
     : metric.error ? "Unavailable" : metric.animationTarget !== undefined && metric.animationFormat
       ? <AnimatedMetricValue target={metric.animationTarget} format={metric.animationFormat}/>
       : metric.value;
-  return <article style={{ "--dashboard-delay": `${delay}ms` } as CSSProperties} className={`dashboard-reveal dashboard-card-hover relative overflow-hidden rounded-2xl border p-5 ${featured ? "dashboard-featured border-[#646BA2]/30 bg-gradient-to-br from-[#131C58] via-[#1B268E] to-[#111638] shadow-[0_18px_45px_rgba(19,28,88,0.24)]" : "border-white/[0.07] bg-[#10182b] shadow-[0_12px_35px_rgba(0,0,0,0.12)]"}`}>
-    {featured && <div className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full border border-white/10 bg-white/[0.04]" />}
-    <div className="relative flex items-start justify-between gap-3"><p className={`text-xs font-medium ${featured ? "text-blue-100/80" : "text-slate-400"}`}>{metric.label}</p><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${featured ? "bg-white/10 text-white" : "bg-blue-400/10 text-blue-300"}`}><Icon size={17}/></span></div>
-    <p className={`relative mt-5 break-words text-[25px] font-semibold tracking-tight ${featured ? "text-white" : metric.error ? "text-amber-200" : "text-slate-100"}`}>{value}</p>
-    <p className={`relative mt-2 text-[10px] leading-4 ${featured ? "text-blue-100/70" : "text-slate-500"}`}>{metric.error ? "This figure could not be loaded." : metric.detail}</p>
+  return <article style={{ "--dashboard-delay": `${delay}ms` } as CSSProperties} className="dashboard-metric-enter dashboard-card-hover dashboard-featured relative overflow-hidden rounded-2xl border border-[#646BA2]/30 bg-gradient-to-br from-[#131C58] via-[#1B268E] to-[#111638] p-5 shadow-[0_18px_45px_rgba(19,28,88,0.24)]">
+    <div className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full border border-white/10 bg-white/[0.04]" />
+    <div className="relative flex items-start justify-between gap-3"><p className="text-xs font-medium text-blue-100/80">{metric.label}</p><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white"><Icon size={17}/></span></div>
+    <p className={`relative mt-5 break-words text-[25px] font-semibold tracking-tight ${metric.error ? "text-amber-200" : "text-white"}`}>{value}</p>
+    <p className="relative mt-2 text-[10px] leading-4 text-blue-100/70">{metric.error ? "This figure could not be loaded." : metric.detail}</p>
   </article>;
 }
 
@@ -223,7 +223,7 @@ function RequestStatusPanel({ title, detail, pending, approved, rejected, href, 
 function PageIntro({ role, name }: { role: DashboardRole; name?: string }) {
   const title = role === "customer" ? `Welcome${name ? `, ${name.split(" ")[0]}` : " back"}` : role === "staff" ? "Branch workspace" : "Bank overview";
   const detail = role === "customer" ? "A clear picture of your accounts and daily banking." : role === "staff" ? "Customer accounts and review queues available to your role." : "Banking activity and operational queues at a glance.";
-  return <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-300">{role === "customer" ? "Personal banking" : role === "staff" ? "Branch operations" : "Administration"}</p><h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">{title}</h1><p className="mt-1.5 text-sm text-slate-400">{detail}</p></div><span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-2 text-[10px] font-medium text-emerald-200"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300"/>Secure live workspace</span></div>;
+  return <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-300">{role === "customer" ? "Personal banking" : role === "staff" ? "Branch operations" : "Administration"}</p><h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">{title}</h1><p className="mt-1.5 text-sm text-slate-400">{detail}</p></div><span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-2 text-[10px] font-medium text-emerald-200"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300"/>Secure live workspace</span></div>;
 }
 
 export function DashboardOverview({ role }: { role: DashboardRole }) {
@@ -301,8 +301,8 @@ export function DashboardOverview({ role }: { role: DashboardRole }) {
 
   return <div className="dashboard-overview mx-auto min-h-[calc(100vh-68px)] max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
     <PageIntro role={role}/>
-    {isCustomer && <div className="mb-5"><MetricCard metric={customerMetrics[0]} featured/><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{customerMetrics.slice(1).map((metric, index) => <MetricCard key={metric.label} metric={metric} delay={(index + 1) * 55}/>)}</div><div className="mt-5"><CustomerAccountsPanel/></div></div>}
-    {!isCustomer && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Dashboard summary">{(isAdmin ? adminMetrics : staffMetrics).map((metric, index) => <MetricCard key={metric.label} metric={metric} featured={index === 0} delay={index * 55}/>)}</section>}
+    {isCustomer && <div className="mb-5"><MetricCard metric={customerMetrics[0]} delay={0}/><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{customerMetrics.slice(1).map((metric, index) => <MetricCard key={metric.label} metric={metric} delay={(index + 1) * 70}/>)}</div><div className="mt-5"><CustomerAccountsPanel/></div></div>}
+    {!isCustomer && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Dashboard summary">{(isAdmin ? adminMetrics : staffMetrics).map((metric, index) => <MetricCard key={metric.label} metric={metric} delay={index * 70}/>)}</section>}
 
     <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(310px,0.85fr)]">
       <div className="grid min-w-0 gap-5">
