@@ -26,6 +26,7 @@ function operationErrorResponse(error: LoanRepaymentOperationError) {
     OVERPAYMENT: [409, "Repayment cannot exceed the current outstanding balance."],
     IDEMPOTENCY_CONFLICT: [409, "This request key was already used for a different repayment."],
     OUTSTANDING_CHANGED: [409, "The loan balance changed during this request. Please retry."],
+    SCHEDULE_CHANGED: [409, "The repayment schedule changed during this request. No funds were taken; please retry."],
   } as const;
   const [status, message] = responses[error.code];
   return errorResponse(status, message);

@@ -272,11 +272,13 @@ Staff review state is stored independently from the financial status. Starting o
 
 ### Loans and Repayments
 
-The loan workflow includes application, Staff review, Admin approval/rejection, disbursement, and repayment-related records.
+The loan workflow includes an application with type, requested amount, duration, monthly income, employment status, and description; Staff review; Admin approval/rejection; disbursement; and repayment history. Supported application types are Personal, Education, Home, Business, Medical, and Other. Employment details are collected for review and do not automatically determine eligibility.
 
 Loan approval and loan disbursement are different events. An approved loan should not be described as disbursed until the disbursement operation has actually completed.
 
-Loan repayment updates the account and loan balance and records the repayment/transaction using the application's atomic transaction logic where supported.
+Disbursement atomically credits the approved principal, records the disbursement, and creates one persistent monthly installment per approved month. Northstar currently has no configured interest policy, so the schedule is principal-only and records zero interest; each amount is split in exact paise, with any remainder added to the final installment. Due dates are anchored to the disbursement day and clamped to each month's last calendar day.
+
+Repayments continue through the existing atomic loan repayment operation. Each payment is allocated oldest-installment-first and updates installment amount paid, remaining amount, status, and payment timestamps in the same MongoDB transaction as the account debit, loan balance, transaction, and repayment history. Overdue status is derived from the due date and remaining amount when details are read; it needs no background scheduler. Existing loans without installment records retain their repayment history and display that no schedule is available; no historical installments are fabricated.
 
 ### Transaction Types and Statuses
 
@@ -312,6 +314,7 @@ MongoDB is accessed through Mongoose. The logical data entities in the applicati
 | TransactionReview | Review state and append-only Staff review history associated with a transaction or pending request |
 | SuspiciousTransactionFlag | Reason, Staff attribution, Admin review state, and history; one active flag per target |
 | Loan | Loan application, review, decision, disbursement, and outstanding balance data |
+| LoanInstallment | Persisted monthly due dates, principal/interest snapshot, paid and remaining amounts, and payment status |
 | Loan repayment records | Repayment history and related loan/account references |
 | Notification | Persistent customer notifications with read state and event deduplication |
 
@@ -550,7 +553,7 @@ Latest verified checks for this audit:
 - `npm.cmd run build`: passed; Next.js generated all 61 static pages.
 - `git diff --check`: passed.
 
-The configured test command contains 89 tests and subtests across user-security, profile, notifications, analytics range validation, Staff customer registration, customer verification, transaction review/flagging, and Transaction PIN/account limits. A direct invocation currently fails before loading tests because Node.js 24 `os.userInfo()` returns `uv_os_get_passwd` / `ERR_SYSTEM_ERROR` in this Windows environment. With a temporary runner-only preload that supplies the missing username, 67 tests passed, zero failed, and 22 database-backed tests were skipped because `RUN_DB_INTEGRATION_TESTS` is false. Two profile integration tests were also attempted before adding this opt-in gate; both failed DNS resolution for the configured Atlas host. No successful MongoDB integration test is claimed. MongoDB integration behavior, PIN lockout, concurrent transfer limits, and live financial workflows are not verified by lint, type checking, or a successful build.
+The configured test command contains 90 tests and subtests across user-security, profile, notifications, analytics range validation, Staff customer registration, customer verification, transaction review/flagging, and Transaction PIN/account limits. A direct invocation currently fails before loading tests because Node.js 24 `os.userInfo()` returns `uv_os_get_passwd` / `ERR_SYSTEM_ERROR` in this Windows environment. With a temporary runner-only preload that supplies the missing username, 68 tests passed, zero failed, and 22 database-backed tests were skipped because `RUN_DB_INTEGRATION_TESTS` is false. Node's SRV and TXT DNS lookups for the configured Atlas host currently return `ETIMEOUT`; the MongoDB driver therefore cannot reach server selection, TLS, authentication, database selection, or transaction initialization. No successful MongoDB integration test is claimed. MongoDB integration behavior, PIN lockout, concurrent transfer limits, and live financial workflows are not verified by lint, type checking, or a successful build.
 
 Additional items requiring configuration or verification:
 

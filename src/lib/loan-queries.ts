@@ -2,6 +2,7 @@ import mongoose, { type HydratedDocument } from "mongoose";
 import { BankAccount } from "@/models/BankAccount";
 import { Loan, type LoanDocument } from "@/models/Loan";
 import { LoanRepayment, type LoanRepaymentDocument } from "@/models/LoanRepayment";
+import { LoanInstallment } from "@/models/LoanInstallment";
 import { Transaction } from "@/models/Transaction";
 import { User } from "@/models/User";
 import { formatBdtPaisa, parseBdtPaisa } from "@/lib/bdt-money";
@@ -28,9 +29,13 @@ export type SafeLoan = {
   loanId: string;
   amount: string;
   approvedAmount: string | null;
+  disbursedAmount: string | null;
   outstandingBalance: string | null;
   currency: "BDT";
   purpose: string;
+  loanType: string | null;
+  monthlyIncome: string | null;
+  employmentStatus: string | null;
   durationMonths: number;
   status: string;
   rejectionReason?: string;
@@ -41,14 +46,30 @@ export type SafeLoan = {
   updatedAt: string;
   disbursedAt: string | null;
   disbursement: { transactionId: string; amount: string; currency: "BDT"; createdAt: string } | null;
+  schedule: SafeLoanInstallment[] | null;
   account: { id: string; maskedAccountNumber: string; accountType: string; status: string } | null;
   customer?: { id: string; name: string; email: string } | null;
   reviewer?: { id: string; name: string; email: string } | null;
 };
 
+export type SafeLoanInstallment = {
+  id: string;
+  installmentNumber: number;
+  dueDate: string;
+  principalAmountDue: string;
+  interestAmountDue: string;
+  totalAmountDue: string;
+  amountPaid: string;
+  remainingAmount: string;
+  status: "PENDING" | "PARTIALLY_PAID" | "PAID" | "OVERDUE";
+  paidAt: string | null;
+  lastPaymentAt: string | null;
+};
+
 async function serializeLoans(
   loans: Array<HydratedDocument<LoanDocument>>,
   includeTeamDetails: boolean,
+  includeSchedule = false,
 ): Promise<SafeLoan[]> {
   const accountIds = loans.map((loan) => loan.accountId);
   const customerIds = loans.map((loan) => loan.customerId);
@@ -56,7 +77,7 @@ async function serializeLoans(
     ? loans.flatMap((loan) => loan.reviewedBy ? [loan.reviewedBy] : [])
     : [];
   const disbursementIds = loans.flatMap((loan) => loan.disbursementTransactionId ? [loan.disbursementTransactionId] : []);
-  const [accounts, customers, reviewers, disbursementTransactions] = await Promise.all([
+  const [accounts, customers, reviewers, disbursementTransactions, installments] = await Promise.all([
     BankAccount.find({ _id: { $in: accountIds } }).select("accountNumber accountType status").lean(),
     User.find({ _id: { $in: customerIds } }).select("name email").lean(),
     includeTeamDetails
@@ -65,11 +86,19 @@ async function serializeLoans(
     Transaction.find({ _id: { $in: disbursementIds }, transactionType: "LOAN_DISBURSEMENT", status: "COMPLETED" })
       .select("transactionId amount currency createdAt")
       .lean(),
+    includeSchedule
+      ? LoanInstallment.find({ loanId: { $in: loans.map((loan) => loan._id) } }).sort({ installmentNumber: 1 }).lean()
+      : Promise.resolve([]),
   ]);
   const accountById = new Map(accounts.map((account) => [account._id.toString(), account]));
   const customerById = new Map(customers.map((customer) => [customer._id.toString(), customer]));
   const reviewerById = new Map(reviewers.map((reviewer) => [reviewer._id.toString(), reviewer]));
   const transactionById = new Map(disbursementTransactions.map((transaction) => [transaction._id.toString(), transaction]));
+  const installmentsByLoan = new Map<string, typeof installments>();
+  for (const installment of installments) {
+    const id = installment.loanId.toString();
+    installmentsByLoan.set(id, [...(installmentsByLoan.get(id) ?? []), installment]);
+  }
 
   return loans.map((loan) => {
     const account = accountById.get(loan.accountId.toString());
@@ -78,16 +107,40 @@ async function serializeLoans(
     const disbursementTransaction = loan.disbursementTransactionId
       ? transactionById.get(loan.disbursementTransactionId.toString())
       : undefined;
+    const persistedInstallments = installmentsByLoan.get(loan._id.toString()) ?? [];
+    const schedule: SafeLoanInstallment[] | null = includeSchedule && persistedInstallments.length > 0
+      ? persistedInstallments.map((installment) => {
+          const remainingPaisa = parseBdtPaisa(installment.remainingAmount.toString());
+          const overdue = remainingPaisa !== null && remainingPaisa > BigInt("0") && installment.dueDate.getTime() < Date.now();
+          return {
+            id: installment._id.toString(),
+            installmentNumber: installment.installmentNumber,
+            dueDate: installment.dueDate.toISOString(),
+            principalAmountDue: installment.principalAmountDue.toString(),
+            interestAmountDue: installment.interestAmountDue.toString(),
+            totalAmountDue: installment.totalAmountDue.toString(),
+            amountPaid: installment.amountPaid.toString(),
+            remainingAmount: installment.remainingAmount.toString(),
+            status: installment.status === "PAID" ? "PAID" : overdue ? "OVERDUE" : installment.status,
+            paidAt: installment.paidAt?.toISOString() ?? null,
+            lastPaymentAt: installment.lastPaymentAt?.toISOString() ?? null,
+          };
+        })
+      : null;
     return {
       id: loan._id.toString(),
       loanId: loan.loanId,
       amount: loan.amount.toString(),
       approvedAmount: loan.approvedAmount?.toString() ?? null,
+      disbursedAmount: loan.disbursedAmount?.toString() ?? disbursementTransaction?.amount.toString() ?? null,
       outstandingBalance: loan.outstandingBalance?.toString() ??
         (loan.status === "DISBURSED" ? loan.approvedAmount?.toString() ?? null :
           loan.status === "PAID" ? "0.00" : null),
       currency: "BDT" as const,
       purpose: loan.purpose,
+      loanType: loan.loanType ?? null,
+      monthlyIncome: loan.monthlyIncome?.toString() ?? null,
+      employmentStatus: loan.employmentStatus ?? null,
       durationMonths: loan.durationMonths,
       status: loan.status,
       ...(loan.rejectionReason ? { rejectionReason: loan.rejectionReason } : {}),
@@ -105,6 +158,7 @@ async function serializeLoans(
             createdAt: disbursementTransaction.createdAt.toISOString(),
           }
         : null,
+      schedule,
       account: account
         ? {
             id: account._id.toString(),
@@ -152,7 +206,7 @@ export async function listLoans(
 export async function getLoanDetails(filter: LoanFilter, includeTeamDetails: boolean) {
   const loan = await Loan.findOne(filter);
   if (!loan) return null;
-  const [record] = await serializeLoans([loan], includeTeamDetails);
+  const [record] = await serializeLoans([loan], includeTeamDetails, true);
   return record;
 }
 

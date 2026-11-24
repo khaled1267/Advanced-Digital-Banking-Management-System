@@ -6,7 +6,7 @@ import {
   MIN_LOAN_PAISA,
   MIN_LOAN_DURATION_MONTHS,
 } from "@/lib/loan-limits";
-import { LOAN_STATUSES } from "@/models/Loan";
+import { EMPLOYMENT_STATUSES, LOAN_STATUSES, LOAN_TYPES } from "@/models/Loan";
 
 const objectIdSchema = z.string().regex(/^[\da-f]{24}$/i, "A valid account is required.");
 
@@ -17,6 +17,12 @@ export const createLoanSchema = z.strictObject({
     return amountPaisa !== null && amountPaisa >= MIN_LOAN_PAISA && amountPaisa <= MAX_LOAN_PAISA;
   }, "Loan amount must be between BDT 10,000.00 and BDT 5,000,000.00."),
   purpose: z.string().trim().min(10).max(500),
+  loanType: z.enum(LOAN_TYPES),
+  monthlyIncome: z.string().trim().refine(
+    isPositiveBdtDecimal,
+    "Monthly income must be a positive BDT amount with at most two decimal places.",
+  ),
+  employmentStatus: z.enum(EMPLOYMENT_STATUSES),
   durationMonths: z.number().int().min(MIN_LOAN_DURATION_MONTHS).max(MAX_LOAN_DURATION_MONTHS),
 });
 

@@ -101,11 +101,11 @@ Audit date: 2026-11-23. This is an educational banking demo, not a live banking 
 | Requirement | Required / Bonus | Previous status | Final status | Evidence, tests, and remaining work |
 |---|---|---|---|
 | E1. Loan application form | Required | FULLY IMPLEMENTED | FULLY IMPLEMENTED | `LoanPages.tsx`; `/api/v1/loans`; Customer account ownership validated server-side. |
-| E2. Loan type | Required | MISSING | MISSING | Loan model has no type/category field; Add only after supported types/business rules are defined. |
+| E2. Loan type | Required | MISSING | IMPLEMENTED BUT NOT VERIFIED | `Loan.loanType`; Zod enum and Customer form use controlled Personal/Education/Home/Business/Medical/Other choices; DB persistence is covered by gated application tests. |
 | E3. Requested amount | Required | FULLY IMPLEMENTED | FULLY IMPLEMENTED | Loan model/validation/operations; Exact BDT amount bounds. |
 | E4. Duration | Required | FULLY IMPLEMENTED | FULLY IMPLEMENTED | Loan model/validation; 6–60 months. |
-| E5. Monthly income | Required | MISSING | MISSING | No field or validation in User/Loan models; Not collected or persisted. |
-| E6. Employment status | Required | MISSING | MISSING | No field or validation in User/Loan models; Not collected or persisted. |
+| E5. Monthly income | Required | MISSING | IMPLEMENTED BUT NOT VERIFIED | `Loan.monthlyIncome`; exact positive BDT validation; Customer, Staff, and Admin detail views; DB integration remains opt-in. |
+| E6. Employment status | Required | MISSING | IMPLEMENTED BUT NOT VERIFIED | `Loan.employmentStatus`; controlled Zod enum and form; displayed to Staff/Admin; DB integration remains opt-in. |
 | E7. Application description | Required | FULLY IMPLEMENTED | FULLY IMPLEMENTED | `Loan.purpose`; application form; Required purpose text is validated. |
 | E8. Pending status | Required | FULLY IMPLEMENTED | FULLY IMPLEMENTED | `LOAN_STATUSES` and application operation; New application starts `PENDING`. |
 | E9. Under Review status | Required | PARTIALLY IMPLEMENTED | PARTIALLY IMPLEMENTED | `FORWARDED_TO_ADMIN`; Staff review workflow; Review is represented by forwarding; no distinct `UNDER_REVIEW` status. |
@@ -115,7 +115,7 @@ Audit date: 2026-11-23. This is an educational banking demo, not a live banking 
 | E13. Completed status | Required | PARTIALLY IMPLEMENTED | PARTIALLY IMPLEMENTED | `PAID` represents completed repayment; No explicit `COMPLETED` enum value. |
 | E14. Admin approval/rejection | Required | IMPLEMENTED BUT NOT VERIFIED | IMPLEMENTED BUT NOT VERIFIED | Admin loan routes and service; Atomic decisions and role guard; DB test skipped. |
 | E15. Loan disbursement | Required | IMPLEMENTED BUT NOT VERIFIED | IMPLEMENTED BUT NOT VERIFIED | Admin disburse route and operation; Uses approved amount and an atomic credit; DB test skipped. |
-| E16. Repayment schedule | Required | MISSING | MISSING | Repayment records store actual payments; no schedule model/generator; No payment calendar/installment calculation exists. |
+| E16. Repayment schedule | Required | MISSING | IMPLEMENTED BUT NOT VERIFIED | `LoanInstallment`, `loan-schedule.ts`, transactional disbursement/repayment integration and loan detail schedule UI; exact paise/month-end unit tests added; MongoDB integration remains gated and unverified. |
 | E17. Remaining balance | Required | IMPLEMENTED BUT NOT VERIFIED | IMPLEMENTED BUT NOT VERIFIED | `Loan.outstandingBalance`; summary and repayment services; Exact stored amount; DB integration not verified. |
 | E18. Repayment history | Required | IMPLEMENTED BUT NOT VERIFIED | IMPLEMENTED BUT NOT VERIFIED | `LoanRepayment` and customer/admin history endpoints; Pagination/ownership exist; DB integration not verified. |
 

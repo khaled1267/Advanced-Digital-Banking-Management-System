@@ -7,9 +7,13 @@ export type LoanRecord = {
   loanId: string;
   amount: string;
   approvedAmount: string | null;
+  disbursedAmount: string | null;
   outstandingBalance: string | null;
   currency: "BDT";
   purpose: string;
+  loanType: string | null;
+  monthlyIncome: string | null;
+  employmentStatus: string | null;
   durationMonths: number;
   status: LoanStatus;
   rejectionReason?: string;
@@ -18,11 +22,26 @@ export type LoanRecord = {
   approvedAt: string | null;
   disbursedAt: string | null;
   disbursement: { transactionId: string; amount: string; currency: "BDT"; createdAt: string } | null;
+  schedule: LoanInstallmentRecord[] | null;
   createdAt: string;
   updatedAt: string;
   account: { id: string; maskedAccountNumber: string; accountType: string; status: string } | null;
   customer?: { id: string; name: string; email: string } | null;
   reviewer?: { id: string; name: string; email: string } | null;
+};
+
+export type LoanInstallmentRecord = {
+  id: string;
+  installmentNumber: number;
+  dueDate: string;
+  principalAmountDue: string;
+  interestAmountDue: string;
+  totalAmountDue: string;
+  amountPaid: string;
+  remainingAmount: string;
+  status: "PENDING" | "PARTIALLY_PAID" | "PAID" | "OVERDUE";
+  paidAt: string | null;
+  lastPaymentAt: string | null;
 };
 
 export type LoanListQuery = {
@@ -81,6 +100,9 @@ export type CreateLoanInput = {
   accountId: string;
   amount: string;
   purpose: string;
+  loanType: string;
+  monthlyIncome: string;
+  employmentStatus: string;
   durationMonths: number;
 };
 

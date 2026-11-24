@@ -17,6 +17,9 @@ export const LOAN_STATUSES = [
   "PAID",
 ] as const;
 
+export const LOAN_TYPES = ["PERSONAL", "EDUCATION", "HOME", "BUSINESS", "MEDICAL", "OTHER"] as const;
+export const EMPLOYMENT_STATUSES = ["SALARIED", "SELF_EMPLOYED", "BUSINESS_OWNER", "UNEMPLOYED", "OTHER"] as const;
+
 function isWithinLoanLimits(value: mongoose.Types.Decimal128) {
   const amountPaisa = parseBdtPaisa(value.toString());
   return amountPaisa !== null && amountPaisa >= MIN_LOAN_PAISA && amountPaisa <= MAX_LOAN_PAISA;
@@ -30,6 +33,11 @@ function isValidApprovedAmount(value: mongoose.Types.Decimal128) {
 function isNonNegativeBdtAmount(value: mongoose.Types.Decimal128) {
   const amountPaisa = parseBdtPaisa(value.toString());
   return amountPaisa !== null && amountPaisa >= BigInt("0") && amountPaisa <= MAX_BDT_PAISA;
+}
+
+function isPositiveBdtAmount(value: mongoose.Types.Decimal128) {
+  const amountPaisa = parseBdtPaisa(value.toString());
+  return amountPaisa !== null && amountPaisa > BigInt("0") && amountPaisa <= MAX_BDT_PAISA;
 }
 
 const loanSchema = new Schema(
@@ -79,6 +87,12 @@ const loanSchema = new Schema(
         message: "Approved loan amount must be a positive BDT amount.",
       },
     },
+    // Actual principal credited to the customer's account at disbursement.
+    // Kept separate from approvedAmount for a stable historical record.
+    disbursedAmount: {
+      type: Schema.Types.Decimal128,
+      validate: { validator: isValidApprovedAmount, message: "Disbursed loan amount must be a positive BDT amount." },
+    },
     outstandingBalance: {
       type: Schema.Types.Decimal128,
       validate: {
@@ -87,6 +101,14 @@ const loanSchema = new Schema(
       },
     },
     currency: { type: String, enum: ["BDT"], default: "BDT", required: true, immutable: true },
+    loanType: { type: String, enum: LOAN_TYPES, required: true, immutable: true },
+    monthlyIncome: {
+      type: Schema.Types.Decimal128,
+      required: true,
+      immutable: true,
+      validate: { validator: isPositiveBdtAmount, message: "Monthly income must be a positive BDT amount." },
+    },
+    employmentStatus: { type: String, enum: EMPLOYMENT_STATUSES, required: true, immutable: true },
     purpose: { type: String, required: true, trim: true, minlength: 10, maxlength: 500, immutable: true },
     durationMonths: { type: Number, required: true, min: MIN_LOAN_DURATION_MONTHS, max: MAX_LOAN_DURATION_MONTHS, immutable: true },
     status: { type: String, enum: LOAN_STATUSES, default: "PENDING", required: true },

@@ -3,7 +3,9 @@ import { formatBdtPaisa, MAX_BDT_PAISA, parseBdtPaisa } from "@/lib/bdt-money";
 import { BankAccount } from "@/models/BankAccount";
 import { Loan } from "@/models/Loan";
 import { LoanRepayment, type LoanRepaymentDocument } from "@/models/LoanRepayment";
+import { LoanInstallment } from "@/models/LoanInstallment";
 import { Transaction } from "@/models/Transaction";
+import { generateLoanInstallments } from "@/lib/loan-schedule";
 import { createNotification, formatNotificationAmount } from "@/lib/notification-operations";
 import type { ApproveLoanInput, CreateLoanInput, CreateLoanRepaymentInput } from "@/lib/validation/loan";
 
@@ -30,7 +32,8 @@ export class LoanRepaymentOperationError extends Error {
     | "MINIMUM_BALANCE"
     | "OVERPAYMENT"
     | "IDEMPOTENCY_CONFLICT"
-    | "OUTSTANDING_CHANGED") {
+    | "OUTSTANDING_CHANGED"
+    | "SCHEDULE_CHANGED") {
     super(code);
     this.name = "LoanRepaymentOperationError";
   }
@@ -183,6 +186,54 @@ async function executeLoanRepaymentInSession(
       );
   if (!loanUpdate) throw new LoanRepaymentOperationError("OUTSTANDING_CHANGED");
 
+  const installments = await LoanInstallment.find({ loanId: loan._id, customerId })
+    .sort({ installmentNumber: 1 }).session(session);
+  if (installments.length > 0) {
+    const scheduledRemaining = installments.reduce((sum, installment) => {
+      const remaining = parseBdtPaisa(installment.remainingAmount.toString());
+      return remaining === null ? null : sum === null ? null : sum + remaining;
+    }, BigInt("0") as bigint | null);
+    if (scheduledRemaining === null || scheduledRemaining !== outstandingPaisa) {
+      throw new LoanRepaymentOperationError("SCHEDULE_CHANGED");
+    }
+
+    let unappliedPaisa = amountPaisa;
+    const paymentDate = new Date();
+    for (const installment of installments) {
+      if (unappliedPaisa === BigInt("0")) break;
+      const installmentRemaining = parseBdtPaisa(installment.remainingAmount.toString());
+      const installmentPaid = parseBdtPaisa(installment.amountPaid.toString());
+      const installmentTotal = parseBdtPaisa(installment.totalAmountDue.toString());
+      if (
+        installmentRemaining === null || installmentRemaining < BigInt("0") ||
+        installmentPaid === null || installmentTotal === null || installmentPaid + installmentRemaining !== installmentTotal
+      ) {
+        throw new LoanRepaymentOperationError("SCHEDULE_CHANGED");
+      }
+      if (installmentRemaining === BigInt("0")) continue;
+      const allocated = unappliedPaisa < installmentRemaining ? unappliedPaisa : installmentRemaining;
+      const nextRemaining = installmentRemaining - allocated;
+      const installmentUpdate = await LoanInstallment.updateOne(
+        { _id: installment._id, loanId: loan._id, customerId, remainingAmount: installment.remainingAmount, status: { $ne: "PAID" } },
+        {
+          $inc: {
+            amountPaid: mongoose.Types.Decimal128.fromString(formatBdtPaisa(allocated)),
+            remainingAmount: mongoose.Types.Decimal128.fromString(`-${formatBdtPaisa(allocated)}`),
+          },
+          $set: {
+            status: nextRemaining === BigInt("0") ? "PAID" : "PARTIALLY_PAID",
+            lastPaymentAt: paymentDate,
+            ...(nextRemaining === BigInt("0") ? { paidAt: paymentDate } : {}),
+          },
+        },
+        { session, runValidators: true },
+      );
+      if (installmentUpdate.matchedCount !== 1) throw new LoanRepaymentOperationError("SCHEDULE_CHANGED");
+      unappliedPaisa -= allocated;
+    }
+    if (unappliedPaisa !== BigInt("0")) throw new LoanRepaymentOperationError("SCHEDULE_CHANGED");
+  }
+
   const [transaction] = await Transaction.create([{
     transactionType: "LOAN_REPAYMENT",
     fromAccount: account._id,
@@ -216,7 +267,7 @@ export async function executeLoanRepayment(
   loanId: string,
   input: CreateLoanRepaymentInput,
 ) {
-  await Promise.all([Loan.init(), LoanRepayment.init(), Transaction.init()]);
+  await Promise.all([Loan.init(), LoanRepayment.init(), LoanInstallment.init(), Transaction.init()]);
   const session = await mongoose.startSession();
   try {
     let result: LoanRepaymentResult | undefined;
@@ -307,6 +358,7 @@ async function executeLoanDisbursement(
     {
       $set: {
         status: "DISBURSED",
+        disbursedAmount: amount,
         disbursedBy: adminId,
         disbursedAt,
         disbursementTransactionId: transaction._id,
@@ -315,6 +367,18 @@ async function executeLoanDisbursement(
     { returnDocument: "after", runValidators: true, session },
   );
   if (!updatedLoan) throw new LoanOperationError("CONFLICT");
+
+  const schedule = generateLoanInstallments(amount.toString(), loan.durationMonths, disbursedAt);
+  await LoanInstallment.insertMany(schedule.map((installment) => ({
+    loanId: loan._id,
+    customerId: loan.customerId,
+    ...installment,
+    principalAmountDue: mongoose.Types.Decimal128.fromString(installment.principalAmountDue),
+    interestAmountDue: mongoose.Types.Decimal128.fromString(installment.interestAmountDue),
+    totalAmountDue: mongoose.Types.Decimal128.fromString(installment.totalAmountDue),
+    amountPaid: mongoose.Types.Decimal128.fromString(installment.amountPaid),
+    remainingAmount: mongoose.Types.Decimal128.fromString(installment.remainingAmount),
+  })), { session });
 
   return { loan: updatedLoan, transaction, replayed: false };
 }
@@ -460,6 +524,9 @@ export async function createLoanApplication(
     accountId,
     activeAccountId: accountId,
     amount: mongoose.Types.Decimal128.fromString(input.amount),
+    loanType: input.loanType,
+    monthlyIncome: mongoose.Types.Decimal128.fromString(input.monthlyIncome),
+    employmentStatus: input.employmentStatus,
     currency: "BDT",
     purpose: input.purpose,
     durationMonths: input.durationMonths,

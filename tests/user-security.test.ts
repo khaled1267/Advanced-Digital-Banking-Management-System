@@ -12,6 +12,8 @@ import { Deposit } from "../src/models/Deposit";
 import { Withdrawal } from "../src/models/Withdrawal";
 import { Loan } from "../src/models/Loan";
 import { LoanRepayment } from "../src/models/LoanRepayment";
+import { LoanInstallment } from "../src/models/LoanInstallment";
+import { generateLoanInstallments } from "../src/lib/loan-schedule";
 import { Notification } from "../src/models/Notification";
 import { connectToDatabase } from "../src/lib/mongodb";
 import { hashPassword, hashTransactionPin, verifyPassword } from "../src/lib/password";
@@ -628,6 +630,9 @@ test(
         accountId: accounts[index]._id,
         activeAccountId: accounts[index]._id,
         amount: "25000.50",
+        loanType: "PERSONAL" as const,
+        monthlyIncome: "50000.00",
+        employmentStatus: "SALARIED" as const,
         currency: "BDT" as const,
         purpose: "Loan decision integration scenario",
         durationMonths: 24,
@@ -713,6 +718,9 @@ test(
       const newApplication = await createLoan(accountRequest("/loans", tokens.customer, "POST", {
         accountId: accounts[1]._id.toString(),
         amount: "15000.00",
+        loanType: "PERSONAL" as const,
+        monthlyIncome: "40000.00",
+        employmentStatus: "SELF_EMPLOYED",
         purpose: "New application after previous rejection",
         durationMonths: 12,
       }));
@@ -753,7 +761,7 @@ test(
 
     try {
       await connectToDatabase();
-      await Promise.all([Loan.init(), Transaction.init()]);
+      await Promise.all([Loan.init(), LoanInstallment.init(), Transaction.init()]);
       const [admin, staff, customer, otherCustomer] = await User.create([
         { name: "Loan Disbursement Admin", email: emails.admin, passwordHash, role: "ADMIN" },
         { name: "Loan Disbursement Staff", email: emails.staff, passwordHash, role: "STAFF" },
@@ -784,6 +792,9 @@ test(
         customerId: customer._id,
         accountId: accounts[accountIndex]._id,
         amount: "25000.50",
+        loanType: "PERSONAL" as const,
+        monthlyIncome: "50000.00",
+        employmentStatus: "SALARIED" as const,
         approvedAmount: "12000.75",
         currency: "BDT" as const,
         purpose: "Loan disbursement integration scenario",
@@ -835,7 +846,7 @@ test(
       const success = await disburse(mainLoan._id, tokens.admin);
       assert.equal(success.status, 200);
       const successBody = await success.json() as {
-        data: { loan: { status: string; approvedAmount: string; disbursedAt: string; disbursement: { transactionId: string; amount: string } };
+        data: { loan: { status: string; approvedAmount: string; disbursedAmount: string; disbursedAt: string; disbursement: { transactionId: string; amount: string } };
           transaction: { transactionType: string; status: string; amount: string } };
       };
       assert.equal(successBody.data.loan.status, "DISBURSED");
@@ -845,15 +856,36 @@ test(
       assert.equal(successBody.data.transaction.status, "COMPLETED");
       assert.equal(successBody.data.transaction.amount, "12000.75");
       assert.ok(successBody.data.loan.disbursedAt);
+      assert.equal(successBody.data.loan.disbursedAmount, "12000.75");
       assert.equal((await BankAccount.findById(accounts[0]._id))?.balance.toString(), "12100.75");
       assert.equal(await Transaction.countDocuments({ loanId: mainLoan._id, transactionType: "LOAN_DISBURSEMENT" }), 1);
+      const mainSchedule = await LoanInstallment.find({ loanId: mainLoan._id }).sort({ installmentNumber: 1 });
+      assert.equal(mainSchedule.length, 24);
+      assert.equal(mainSchedule[0].principalAmountDue.toString(), "500.03");
+      assert.equal(mainSchedule[23].principalAmountDue.toString(), "500.06");
+      assert.equal(mainSchedule.reduce((sum, installment) => sum + (parseBdtPaisa(installment.totalAmountDue.toString()) ?? BigInt("0")), BigInt("0")), BigInt("1200075"));
       assert.equal((await disburse(mainLoan._id, tokens.admin)).status, 409);
+      assert.equal(await LoanInstallment.countDocuments({ loanId: mainLoan._id }), 24);
+      const scheduledRepayment = await createLoanRepayment(accountRequest(`/loans/${mainLoan._id}/repayments`, tokens.customer, "POST", {
+        amount: "600.00",
+        sourceAccountId: accounts[0]._id.toString(),
+        idempotencyKey: randomUUID(),
+      }), { params: Promise.resolve({ id: mainLoan._id.toString() }) });
+      assert.equal(scheduledRepayment.status, 201);
+      const updatedInstallments = await LoanInstallment.find({ loanId: mainLoan._id }).sort({ installmentNumber: 1 });
+      assert.equal(updatedInstallments[0].status, "PAID");
+      assert.equal(updatedInstallments[0].amountPaid.toString(), "500.03");
+      assert.equal(updatedInstallments[1].status, "PARTIALLY_PAID");
+      assert.equal(updatedInstallments[1].amountPaid.toString(), "99.97");
       const customerDetails = await getMyLoan(accountRequest(`/loans/${mainLoan._id}`, tokens.customer), {
         params: Promise.resolve({ id: mainLoan._id.toString() }),
       });
-      const customerDetailsBody = await customerDetails.json() as { data: { loan: { disbursement: { transactionId: string } | null } } };
+      const customerDetailsBody = await customerDetails.json() as { data: { loan: { disbursement: { transactionId: string } | null; schedule: Array<{ installmentNumber: number; status: string }> | null } } };
       assert.equal(customerDetails.status, 200);
       assert.equal(customerDetailsBody.data.loan.disbursement?.transactionId, successBody.data.loan.disbursement.transactionId);
+      assert.equal(customerDetailsBody.data.loan.schedule?.length, 24);
+      assert.equal(customerDetailsBody.data.loan.schedule?.[0].status, "PAID");
+      assert.equal(await LoanInstallment.countDocuments({ loanId: rollbackLoan._id }), 0);
 
       const concurrentResponses = await Promise.all([
         disburse(concurrentLoan._id, tokens.admin),
@@ -871,6 +903,8 @@ test(
     } finally {
       if (mongoose.connection.readyState === 1) {
         await Transaction.deleteMany({ loanId: { $in: loanIds } });
+        await LoanRepayment.deleteMany({ loanId: { $in: loanIds } });
+        await LoanInstallment.deleteMany({ loanId: { $in: loanIds } });
         await Loan.deleteMany({ _id: { $in: loanIds } });
         await BankAccount.deleteMany({ _id: { $in: accountIds } });
         await User.deleteMany({ email: { $in: Object.values(emails) } });
@@ -926,7 +960,7 @@ test(
 
     try {
       await connectToDatabase();
-      await Promise.all([Loan.init(), LoanRepayment.init(), Transaction.init()]);
+      await Promise.all([Loan.init(), LoanRepayment.init(), LoanInstallment.init(), Transaction.init()]);
       const [admin, staff, customer, otherCustomer] = await User.create([
         { name: "Loan Repayment Admin", email: emails.admin, passwordHash, role: "ADMIN" },
         { name: "Loan Repayment Staff", email: emails.staff, passwordHash, role: "STAFF" },
@@ -959,6 +993,9 @@ test(
         customerId,
         accountId,
         amount: "250.00",
+        loanType: "MEDICAL" as const,
+        monthlyIncome: "45000.00",
+        employmentStatus: "BUSINESS_OWNER" as const,
         approvedAmount,
         currency: "BDT" as const,
         purpose: "Loan repayment integration scenario",
@@ -976,6 +1013,17 @@ test(
       ]);
       loanIds.push(...loans.map((loan) => loan._id));
       const [mainLoan, insufficientLoan, approvedLoan, paidLoan, idempotentLoan, rollbackLoan, otherCustomerLoan] = loans;
+      const rollbackSchedule = generateLoanInstallments("25.00", 24, new Date("2026-01-01T00:00:00.000Z"));
+      await LoanInstallment.insertMany(rollbackSchedule.map((installment) => ({
+        loanId: rollbackLoan._id,
+        customerId: customer._id,
+        ...installment,
+        principalAmountDue: mongoose.Types.Decimal128.fromString(installment.principalAmountDue),
+        interestAmountDue: mongoose.Types.Decimal128.fromString(installment.interestAmountDue),
+        totalAmountDue: mongoose.Types.Decimal128.fromString(installment.totalAmountDue),
+        amountPaid: mongoose.Types.Decimal128.fromString(installment.amountPaid),
+        remainingAmount: mongoose.Types.Decimal128.fromString(installment.remainingAmount),
+      })));
       const repay = (loanId: mongoose.Types.ObjectId, token: string | undefined, body: unknown) =>
         createLoanRepayment(accountRequest(`/loans/${loanId}/repayments`, token, "POST", body), {
           params: Promise.resolve({ id: loanId.toString() }),
@@ -1119,10 +1167,14 @@ test(
       assert.equal((await Loan.findById(rollbackLoan._id))?.status, "DISBURSED");
       assert.equal((await Loan.findById(rollbackLoan._id))?.outstandingBalance, undefined);
       assert.equal(await LoanRepayment.countDocuments({ loanId: rollbackLoan._id }), 0);
+      const rolledBackInstallments = await LoanInstallment.find({ loanId: rollbackLoan._id });
+      assert.equal(rolledBackInstallments.length, 24);
+      assert.equal(rolledBackInstallments.every((installment) => installment.status === "PENDING" && installment.amountPaid.toString() === "0.00"), true);
     } finally {
       Transaction.create = originalTransactionCreate;
       if (mongoose.connection.readyState === 1) {
         await LoanRepayment.deleteMany({ loanId: { $in: loanIds } });
+        await LoanInstallment.deleteMany({ loanId: { $in: loanIds } });
         await Transaction.deleteMany({ fromAccount: { $in: accountIds }, transactionType: "LOAN_REPAYMENT" });
         await Loan.deleteMany({ _id: { $in: loanIds } });
         await BankAccount.deleteMany({ _id: { $in: accountIds } });
@@ -1135,20 +1187,41 @@ test(
 
 test("loan validation enforces approved amount, duration, review, and pagination limits", async () => {
   const accountId = "507f1f77bcf86cd799439011";
+  const validApplication = {
+    accountId,
+    amount: MIN_LOAN_AMOUNT,
+    loanType: "EDUCATION",
+    monthlyIncome: "50000.00",
+    employmentStatus: "SALARIED",
+    purpose: "Education expenses",
+    durationMonths: MIN_LOAN_DURATION_MONTHS,
+  };
   assert.equal(createLoanSchema.safeParse({
     accountId,
     amount: MIN_LOAN_AMOUNT,
+    loanType: "EDUCATION",
+    monthlyIncome: "50000.00",
+    employmentStatus: "SALARIED",
     purpose: "Education expenses",
     durationMonths: MIN_LOAN_DURATION_MONTHS,
   }).success, true);
+  assert.equal(createLoanSchema.safeParse({ ...validApplication, loanType: undefined }).success, false);
+  assert.equal(createLoanSchema.safeParse({ ...validApplication, loanType: "AUTO" }).success, false);
+  assert.equal(createLoanSchema.safeParse({ ...validApplication, monthlyIncome: "0.00" }).success, false);
+  assert.equal(createLoanSchema.safeParse({ ...validApplication, monthlyIncome: "100.001" }).success, false);
+  assert.equal(createLoanSchema.safeParse({ ...validApplication, employmentStatus: "CONTRACTOR" }).success, false);
+  assert.equal(createLoanSchema.safeParse({ ...validApplication, purpose: "short" }).success, false);
   assert.equal(createLoanSchema.safeParse({
     accountId,
     amount: MAX_LOAN_AMOUNT,
+    loanType: "HOME",
+    monthlyIncome: "125000.00",
+    employmentStatus: "SELF_EMPLOYED",
     purpose: "Home improvement project",
     durationMonths: MAX_LOAN_DURATION_MONTHS,
   }).success, true);
   for (const amount of ["9999.99", "5000000.01", "1e4", "10000.001"]) {
-    assert.equal(createLoanSchema.safeParse({ accountId, amount, purpose: "A valid loan purpose", durationMonths: 12 }).success, false);
+    assert.equal(createLoanSchema.safeParse({ accountId, amount, loanType: "PERSONAL", monthlyIncome: "30000.00", employmentStatus: "SALARIED", purpose: "A valid loan purpose", durationMonths: 12 }).success, false);
   }
   assert.equal(approveLoanSchema.safeParse({ approvedAmount: MAX_LOAN_AMOUNT }).success, true);
   assert.equal(approveLoanSchema.safeParse({ approvedAmount: "5000000.01" }).success, false);
@@ -1156,6 +1229,9 @@ test("loan validation enforces approved amount, duration, review, and pagination
     customerId: new mongoose.Types.ObjectId(),
     accountId: new mongoose.Types.ObjectId(),
     amount: MAX_LOAN_AMOUNT,
+    loanType: "PERSONAL",
+    monthlyIncome: "30000.00",
+    employmentStatus: "SALARIED",
     approvedAmount: "5000000.01",
     purpose: "Loan amount validation scenario",
     durationMonths: 12,
@@ -1165,12 +1241,15 @@ test("loan validation enforces approved amount, duration, review, and pagination
     (error: unknown) => error instanceof mongoose.Error.ValidationError && Boolean(error.errors.approvedAmount),
   );
   for (const durationMonths of [5, 61, 12.5]) {
-    assert.equal(createLoanSchema.safeParse({ accountId, amount: MIN_LOAN_AMOUNT, purpose: "A valid loan purpose", durationMonths }).success, false);
+    assert.equal(createLoanSchema.safeParse({ accountId, amount: MIN_LOAN_AMOUNT, loanType: "PERSONAL", monthlyIncome: "30000.00", employmentStatus: "SALARIED", purpose: "A valid loan purpose", durationMonths }).success, false);
   }
   assert.equal(createLoanSchema.safeParse({
     accountId,
     customerId: accountId,
     amount: MIN_LOAN_AMOUNT,
+    loanType: "PERSONAL",
+    monthlyIncome: "30000.00",
+    employmentStatus: "SALARIED",
     purpose: "A valid loan purpose",
     durationMonths: 12,
   }).success, false);
@@ -1188,6 +1267,19 @@ test("loan validation enforces approved amount, duration, review, and pagination
   assert.deepEqual(activeApplicationIndex?.[1].partialFilterExpression, {
     activeAccountId: { $type: "objectId" },
   });
+});
+
+test("loan schedule uses exact paise division and anchored month-end due dates", () => {
+  const schedule = generateLoanInstallments("100.01", 3, new Date("2026-01-31T09:30:00.000Z"));
+  assert.deepEqual(schedule.map((item) => item.totalAmountDue), ["33.33", "33.33", "33.35"]);
+  assert.deepEqual(schedule.map((item) => item.dueDate.toISOString()), [
+    "2026-02-28T09:30:00.000Z",
+    "2026-03-31T09:30:00.000Z",
+    "2026-04-30T09:30:00.000Z",
+  ]);
+  assert.equal(schedule.reduce((sum, item) => sum + (parseBdtPaisa(item.totalAmountDue) ?? BigInt("0")), BigInt("0")), BigInt("10001"));
+  assert.equal(schedule.every((item) => item.interestAmountDue === "0.00"), true);
+  assert.equal(createLoanSchema.safeParse({ accountId: "507f1f77bcf86cd799439011", amount: "10000.00", purpose: "Missing all new application information", durationMonths: 12 }).success, false);
 });
 
 test("Admin loan decision schema and model audit fields are defined", () => {
@@ -1259,6 +1351,9 @@ test("loan RTK Query uses role-specific endpoints and refreshes active lists aft
     await store.dispatch(loansApi.endpoints.createLoanApplication.initiate({
       accountId: "507f1f77bcf86cd799439011",
       amount: "10000.00",
+      loanType: "PERSONAL",
+      monthlyIncome: "50000.00",
+      employmentStatus: "SALARIED",
       purpose: "Automated UI API test request",
       durationMonths: 12,
     })).unwrap();

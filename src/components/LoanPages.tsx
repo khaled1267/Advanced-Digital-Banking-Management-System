@@ -39,11 +39,14 @@ import {
   type LoanListQuery,
   type LoanRecord,
   type LoanRepaymentRecord,
+  type LoanInstallmentRecord,
   type LoanStatus,
 } from "@/store/loansApi";
 import type { BankAccount } from "@/store/bankAccountsApi";
 
 const loanStatuses: LoanStatus[] = ["PENDING", "FORWARDED_TO_ADMIN", "APPROVED", "REJECTED", "DISBURSED", "PAID"];
+const loanTypes = ["PERSONAL", "EDUCATION", "HOME", "BUSINESS", "MEDICAL", "OTHER"] as const;
+const employmentStatuses = ["SALARIED", "SELF_EMPLOYED", "BUSINESS_OWNER", "UNEMPLOYED", "OTHER"] as const;
 
 function LoanStatusBadge({ status }: { status: LoanStatus }) {
   const color = status === "APPROVED" || status === "DISBURSED" || status === "PAID"
@@ -54,6 +57,29 @@ function LoanStatusBadge({ status }: { status: LoanStatus }) {
         ? "bg-blue-400/10 text-blue-200"
         : "bg-rose-400/10 text-rose-200";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${color}`}>{status.replaceAll("_", " ")}</span>;
+}
+
+function InstallmentStatusBadge({ status }: { status: LoanInstallmentRecord["status"] }) {
+  const color = status === "PAID" ? "bg-emerald-400/10 text-emerald-200"
+    : status === "OVERDUE" ? "bg-rose-400/10 text-rose-200"
+      : status === "PARTIALLY_PAID" ? "bg-blue-400/10 text-blue-200"
+        : "bg-amber-400/10 text-amber-200";
+  return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold ${color}`}>{status.replaceAll("_", " ")}</span>;
+}
+
+function LoanSchedule({ schedule }: { schedule: LoanInstallmentRecord[] | null }) {
+  if (!schedule?.length) return <section className="mt-4 rounded-2xl border border-white/[0.08] bg-[#10182b] p-5"><h3 className="text-sm font-semibold text-slate-100">Monthly repayment schedule</h3><p className="mt-2 text-xs text-slate-400">No saved schedule is available for this loan. Existing repayments are preserved; historical installments are not reconstructed.</p></section>;
+  const totalPaisa = schedule.reduce((sum, row) => sum + (parseBdtPaisa(row.totalAmountDue) ?? BigInt("0")), BigInt("0"));
+  const paidPaisa = schedule.reduce((sum, row) => sum + (parseBdtPaisa(row.amountPaid) ?? BigInt("0")), BigInt("0"));
+  const remainingPaisa = schedule.reduce((sum, row) => sum + (parseBdtPaisa(row.remainingAmount) ?? BigInt("0")), BigInt("0"));
+  const paidCount = schedule.filter((row) => row.status === "PAID").length;
+  return <section className="mt-4 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#10182b]">
+    <div className="border-b border-white/[0.06] p-4 sm:p-5"><h3 className="text-sm font-semibold text-slate-100">Monthly repayment schedule</h3><p className="mt-1 text-xs text-slate-400">No interest policy is configured, so this schedule allocates principal only. Repayments go to the oldest unpaid installment first.</p>
+      <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><DetailField label="Total scheduled" value={`BDT ${formatBdtPaisa(totalPaisa)}`}/><DetailField label="Total paid" value={`BDT ${formatBdtPaisa(paidPaisa)}`}/><DetailField label="Remaining" value={`BDT ${formatBdtPaisa(remainingPaisa)}`}/><DetailField label="Installments paid" value={`${paidCount} / ${schedule.length}`}/></dl>
+    </div>
+    <div className="md:hidden divide-y divide-white/[0.06]">{schedule.map((row) => <article key={row.id} className="space-y-2 p-4 text-xs"><div className="flex items-center justify-between gap-2"><strong className="text-slate-200">Installment {row.installmentNumber}</strong><InstallmentStatusBadge status={row.status}/></div><p className="text-slate-400">Due {formatDate(row.dueDate)}</p><div className="grid grid-cols-3 gap-2 text-slate-400"><span>Due<br/><b className="text-slate-200">{row.totalAmountDue}</b></span><span>Paid<br/><b className="text-slate-200">{row.amountPaid}</b></span><span>Left<br/><b className="text-slate-200">{row.remainingAmount}</b></span></div></article>)}</div>
+    <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[700px] text-left text-xs"><thead className="bg-white/[0.04] text-[10px] uppercase tracking-wide text-slate-400"><tr><th className="px-5 py-3">Installment</th><th className="px-4 py-3">Due date</th><th className="px-4 py-3">Amount due</th><th className="px-4 py-3">Amount paid</th><th className="px-4 py-3">Remaining</th><th className="px-4 py-3">Status</th></tr></thead><tbody className="divide-y divide-white/[0.06]">{schedule.map((row) => <tr key={row.id}><td className="px-5 py-3 font-semibold text-slate-200">{row.installmentNumber}</td><td className="px-4 py-3 whitespace-nowrap">{formatDate(row.dueDate)}</td><td className="px-4 py-3">BDT {row.totalAmountDue}</td><td className="px-4 py-3">BDT {row.amountPaid}</td><td className="px-4 py-3">BDT {row.remainingAmount}</td><td className="px-4 py-3"><InstallmentStatusBadge status={row.status}/></td></tr>)}</tbody></table></div>
+  </section>;
 }
 
 function LoanPageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
@@ -250,7 +276,7 @@ function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsErr
     <section role="dialog" aria-modal="true" aria-labelledby="customer-loan-title" className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-[#f7f9fc] p-4 shadow-2xl sm:p-6">
       <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Loan details</p><h2 id="customer-loan-title" className="mt-1 break-all font-mono text-lg font-semibold text-slate-100">{loan.loanId}</h2></div><button type="button" onClick={() => setConfirmation(null)} aria-label="Close loan details" className="rounded-lg p-2 text-slate-400 hover:bg-[#10182b]"><X size={18}/></button></div>
       <section className="mt-4 rounded-2xl border border-white/[0.08] bg-[#10182b] p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Requested amount</p><p className="mt-1 text-2xl font-semibold text-slate-100">BDT {loan.amount}</p></div><LoanStatusBadge status={loan.status}/></div>
-        <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><DetailField label="Approved amount" value={loan.approvedAmount ? `BDT ${loan.approvedAmount}` : "Not approved"}/><DetailField label="Duration" value={`${loan.durationMonths} months`}/><DetailField label="Application date" value={formatDate(loan.createdAt)}/><DetailField label="Approval date" value={loan.approvedAt ? formatDate(loan.approvedAt) : "Not approved"}/><DetailField label="Rejection reason" value={loan.rejectionReason ?? "—"}/><DetailField label="Disbursement date" value={loan.disbursedAt ? formatDate(loan.disbursedAt) : "Not disbursed"}/><DetailField label="Disbursement transaction" value={loan.disbursement?.transactionId ?? "—"}/><DetailField label="Outstanding balance" value={loan.outstandingBalance !== null ? `BDT ${loan.outstandingBalance}` : "—"}/><DetailField label="Receiving account" value={loan.account?.maskedAccountNumber ?? "Unavailable"}/></dl>
+        <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><DetailField label="Loan type" value={loan.loanType ?? "Unavailable for this existing loan"}/><DetailField label="Requested amount" value={`BDT ${loan.amount}`}/><DetailField label="Approved amount" value={loan.approvedAmount ? `BDT ${loan.approvedAmount}` : "Not approved"}/><DetailField label="Disbursed amount" value={loan.disbursedAmount ? `BDT ${loan.disbursedAmount}` : "Not disbursed"}/><DetailField label="Duration" value={`${loan.durationMonths} months`}/><DetailField label="Monthly income" value={loan.monthlyIncome ? `BDT ${loan.monthlyIncome}` : "Unavailable for this existing loan"}/><DetailField label="Employment status" value={loan.employmentStatus?.replaceAll("_", " ") ?? "Unavailable for this existing loan"}/><DetailField label="Application date" value={formatDate(loan.createdAt)}/><DetailField label="Approval date" value={loan.approvedAt ? formatDate(loan.approvedAt) : "Not approved"}/><DetailField label="Rejection reason" value={loan.rejectionReason ?? "—"}/><DetailField label="Disbursement date" value={loan.disbursedAt ? formatDate(loan.disbursedAt) : "Not disbursed"}/><DetailField label="Disbursement transaction" value={loan.disbursement?.transactionId ?? "—"}/><DetailField label="Outstanding balance" value={loan.outstandingBalance !== null ? `BDT ${loan.outstandingBalance}` : "—"}/><DetailField label="Receiving account" value={loan.account?.maskedAccountNumber ?? "Unavailable"}/><div className="sm:col-span-2 lg:col-span-3"><DetailField label="Application description" value={loan.purpose}/></div></dl>
         <div className="mt-5"><div className="flex justify-between text-[10px] text-slate-400"><span>Repayment progress</span><span>{progressPercent.toFixed(2)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.07]"><div className="h-full rounded-full bg-emerald-400/100 transition-all" style={{ width: `${Math.min(progressPercent, 100)}%` }}/></div><p className="mt-1 text-[10px] text-slate-400">Paid BDT {formatBdtPaisa(paidPaisa)} of BDT {formatBdtPaisa(requestedPaisa ?? BigInt("0"))}</p></div>
       </section>
 
@@ -265,6 +291,7 @@ function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsErr
 
       {loan.status === "PAID" && <div className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-400/10 p-4"><CheckCircle2 size={17} className="mt-0.5 text-emerald-200"/><div><p className="text-sm font-semibold text-emerald-900">Loan fully repaid</p><p className="mt-1 text-xs text-emerald-200">Your repayment actions are disabled. You can review the completed repayment history below.</p></div></div>}
 
+      {(loan.status === "DISBURSED" || loan.status === "PAID") && <LoanSchedule schedule={loan.schedule}/>}
       {canShowHistory && <RepaymentHistory repayments={historyData?.repayments} isLoading={history.isLoading} isError={history.isError} error={history.error} onRetry={() => void history.refetch()} page={historyData?.page ?? historyPage} total={historyData?.total ?? 0} totalPages={historyData?.totalPages ?? 0} onPageChange={setHistoryPage}/>}
       <div className="mt-4 flex justify-end"><button type="button" onClick={() => setConfirmation(null)} className="rounded-xl border border-white/[0.08] bg-[#10182b] px-4 py-2.5 text-xs font-semibold text-slate-400">Close</button></div>
       {confirmation && <ConfirmDialog title="Confirm loan repayment" description={`Pay BDT ${confirmation.amount} from ${sourceAccount?.accountNumber ?? "the selected account"} toward loan ${loan.loanId}? Outstanding balance: BDT ${loan.outstandingBalance ?? loan.approvedAmount ?? "—"}.`} confirmLabel={feedbackError ? "Retry same request" : "Confirm repayment"} isLoading={repaymentState.isLoading} error={feedbackError ? feedback : undefined} onConfirm={() => void confirmRepayment()} onCancel={() => setConfirmation(null)}/>}
@@ -279,6 +306,9 @@ export function CustomerLoansPage() {
   const [accountId, setAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [loanType, setLoanType] = useState<(typeof loanTypes)[number]>("PERSONAL");
+  const [monthlyIncome, setMonthlyIncome] = useState("");
+  const [employmentStatus, setEmploymentStatus] = useState<(typeof employmentStatuses)[number]>("SALARIED");
   const [durationMonths, setDurationMonths] = useState(12);
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -293,18 +323,21 @@ export function CustomerLoansPage() {
   const amountPaisa = parseBdtPaisa(amount.trim());
   const validAmount = amountPaisa !== null && amountPaisa >= MIN_LOAN_PAISA && amountPaisa <= MAX_LOAN_PAISA;
   const validPurpose = purpose.trim().length >= 10 && purpose.trim().length <= 500;
+  const monthlyIncomePaisa = parseBdtPaisa(monthlyIncome.trim());
+  const validMonthlyIncome = monthlyIncomePaisa !== null && monthlyIncomePaisa > BigInt("0");
   const activeAccount = activeAccounts.some((account) => account.id === accountId);
 
   async function submitApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeAccount || !validAmount || !validPurpose) return;
+    if (!activeAccount || !validAmount || !validPurpose || !validMonthlyIncome || createState.isLoading) return;
     setFeedback("");
     try {
-      const response = await createLoan({ accountId, amount: amount.trim(), purpose: purpose.trim(), durationMonths }).unwrap();
+      const response = await createLoan({ accountId, amount: amount.trim(), purpose: purpose.trim(), loanType, monthlyIncome: monthlyIncome.trim(), employmentStatus, durationMonths }).unwrap();
       setFeedback(`Application ${response.data.loan.loanId} was submitted successfully.`);
       setFeedbackError(false);
       setAmount("");
       setPurpose("");
+      setMonthlyIncome("");
     } catch (error: unknown) {
       setFeedback(apiMessage(error, "Could not submit your loan application."));
       setFeedbackError(true);
@@ -331,11 +364,14 @@ export function CustomerLoansPage() {
         <form onSubmit={submitApplication} className="mt-5 space-y-4">
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Your active BDT account</span><select className={inputClass} value={accountId} onChange={(event) => { setAccountId(event.target.value); setFeedback(""); }} disabled={accountsLoading || accountsError || activeAccounts.length === 0}><option value="">Choose an account</option>{activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.accountType} · {account.accountNumber} · BDT {account.balance}</option>)}</select>{accountsLoading && <span role="status" className="mt-1 block text-[10px] text-slate-400">Loading your accounts…</span>}{accountsError && <span role="alert" className="mt-1 block text-[10px] text-rose-200">{apiMessage(accountsErrorValue, "Could not load your accounts.")} <button type="button" onClick={() => void refetchAccounts()} className="font-semibold underline">Try again</button></span>}{!accountsLoading && !accountsError && activeAccounts.length === 0 && <span className="mt-1 block text-[10px] text-amber-200">You need an active BDT account before applying.</span>}</label>
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Requested amount (BDT)</span><input className={inputClass} inputMode="decimal" autoComplete="off" placeholder="10000.00" value={amount} onChange={(event) => { setAmount(event.target.value); setFeedback(""); }}/><span className="mt-1 block text-[10px] text-slate-400">Minimum BDT 10,000.00 · Maximum BDT 5,000,000.00</span>{amount.trim() && !validAmount && <span role="alert" className="mt-1 block text-[10px] text-rose-200">Enter an amount in the allowed range with at most two decimal places.</span>}</label>
-          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Loan purpose</span><textarea className={`${inputClass} min-h-24 resize-y`} maxLength={500} placeholder="Describe what you plan to use this loan for" value={purpose} onChange={(event) => { setPurpose(event.target.value); setFeedback(""); }}/><span className="mt-1 flex justify-between text-[10px] text-slate-400"><span>Enter 10–500 characters.</span><span>{purpose.length}/500</span></span>{purpose.length > 0 && !validPurpose && <span role="alert" className="mt-1 block text-[10px] text-rose-200">Purpose must be between 10 and 500 characters.</span>}</label>
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Loan type</span><select className={inputClass} value={loanType} onChange={(event) => setLoanType(event.target.value as (typeof loanTypes)[number])}>{loanTypes.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label>
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Monthly income (BDT)</span><input className={inputClass} inputMode="decimal" autoComplete="off" placeholder="0.00" value={monthlyIncome} onChange={(event) => { setMonthlyIncome(event.target.value); setFeedback(""); }}/>{monthlyIncome.trim() && !validMonthlyIncome && <span role="alert" className="mt-1 block text-[10px] text-rose-200">Enter a positive amount with at most two decimal places.</span>}</label>
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Employment status</span><select className={inputClass} value={employmentStatus} onChange={(event) => setEmploymentStatus(event.target.value as (typeof employmentStatuses)[number])}>{employmentStatuses.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select><span className="mt-1 block text-[10px] text-slate-400">This information is for review and does not automatically determine eligibility.</span></label>
+          <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Application description</span><textarea className={`${inputClass} min-h-24 resize-y`} maxLength={500} placeholder="Describe what you plan to use this loan for" value={purpose} onChange={(event) => { setPurpose(event.target.value); setFeedback(""); }}/><span className="mt-1 flex justify-between text-[10px] text-slate-400"><span>Enter 10–500 characters.</span><span>{purpose.length}/500</span></span>{purpose.length > 0 && !validPurpose && <span role="alert" className="mt-1 block text-[10px] text-rose-200">Description must be between 10 and 500 characters.</span>}</label>
           <label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-400">Duration</span><select className={inputClass} value={durationMonths} onChange={(event) => setDurationMonths(Number(event.target.value))}>{Array.from({ length: (MAX_LOAN_DURATION_MONTHS - MIN_LOAN_DURATION_MONTHS) / 6 + 1 }, (_, index) => MIN_LOAN_DURATION_MONTHS + index * 6).map((months) => <option key={months} value={months}>{months} months</option>)}</select><span className="mt-1 block text-[10px] text-slate-400">Choose between {MIN_LOAN_DURATION_MONTHS} and {MAX_LOAN_DURATION_MONTHS} months.</span></label>
           <div className="rounded-xl border border-blue-400/20 bg-blue-400/10 p-3.5"><div className="flex items-start gap-2.5"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-blue-200"/><p className="text-xs leading-5 text-blue-100">This submits an application for review. It does not change your account balance.</p></div></div>
           {feedback && <p role={feedbackError ? "alert" : "status"} className={`rounded-xl px-3.5 py-2.5 text-xs ${feedbackError ? "bg-rose-400/10 text-rose-200" : "bg-emerald-400/10 text-emerald-200"}`}>{feedback}</p>}
-          <button type="submit" disabled={!activeAccount || !validAmount || !validPurpose || createState.isLoading} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b3a60] disabled:cursor-not-allowed disabled:opacity-45">{createState.isLoading ? "Submitting application…" : "Submit application"}</button>
+          <button type="submit" disabled={!activeAccount || !validAmount || !validPurpose || !validMonthlyIncome || createState.isLoading} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b3a60] disabled:cursor-not-allowed disabled:opacity-45">{createState.isLoading ? "Submitting application…" : "Submit application"}</button>
         </form>
       </section>
 
@@ -419,8 +455,8 @@ function LoanDetailsDialog({ loan, mode, onClose, onForward, onApprove, onReject
       <section className="mt-4 rounded-2xl border border-white/[0.08] bg-[#10182b] p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Requested amount</p><p className="mt-1 text-2xl font-semibold text-slate-100">BDT {loan.amount}</p></div><LoanStatusBadge status={loan.status}/></div>
         <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {mode === "admin" && <><DetailField label="Customer" value={loan.customer?.name ?? "Unavailable"}/><DetailField label="Customer email" value={loan.customer?.email ?? "Unavailable"}/></>}
-          <DetailField label="Account" value={`${loan.account?.maskedAccountNumber ?? "Unavailable"} · ${loan.account?.accountType ?? ""}`}/><DetailField label="Account status" value={loan.account?.status ?? "Unavailable"}/><DetailField label="Approved amount" value={loan.approvedAmount ? `BDT ${loan.approvedAmount}` : "Not approved"}/><DetailField label="Outstanding balance" value={loan.outstandingBalance !== null ? `BDT ${loan.outstandingBalance}` : "—"}/><DetailField label="Duration" value={`${loan.durationMonths} months`}/><DetailField label="Submitted" value={formatDate(loan.createdAt)}/><DetailField label="Approved" value={loan.approvedAt ? formatDate(loan.approvedAt) : "—"}/><DetailField label="Disbursed" value={loan.disbursedAt ? formatDate(loan.disbursedAt) : "—"}/><DetailField label="Disbursement transaction" value={loan.disbursement?.transactionId ?? "—"}/><DetailField label="Staff reviewer" value={loan.reviewer ? `${loan.reviewer.name} · ${loan.reviewer.email}` : "—"}/>
-          <div className="sm:col-span-2 lg:col-span-3"><DetailField label="Purpose" value={loan.purpose}/></div>
+          <DetailField label="Loan type" value={loan.loanType?.replaceAll("_", " ") ?? "Unavailable for this existing loan"}/><DetailField label="Requested amount" value={`BDT ${loan.amount}`}/><DetailField label="Account" value={`${loan.account?.maskedAccountNumber ?? "Unavailable"} · ${loan.account?.accountType ?? ""}`}/><DetailField label="Account status" value={loan.account?.status ?? "Unavailable"}/><DetailField label="Approved amount" value={loan.approvedAmount ? `BDT ${loan.approvedAmount}` : "Not approved"}/><DetailField label="Disbursed amount" value={loan.disbursedAmount ? `BDT ${loan.disbursedAmount}` : "Not disbursed"}/><DetailField label="Outstanding balance" value={loan.outstandingBalance !== null ? `BDT ${loan.outstandingBalance}` : "—"}/><DetailField label="Duration" value={`${loan.durationMonths} months`}/><DetailField label="Monthly income" value={loan.monthlyIncome ? `BDT ${loan.monthlyIncome}` : "Unavailable for this existing loan"}/><DetailField label="Employment status" value={loan.employmentStatus?.replaceAll("_", " ") ?? "Unavailable for this existing loan"}/><DetailField label="Submitted" value={formatDate(loan.createdAt)}/><DetailField label="Approved" value={loan.approvedAt ? formatDate(loan.approvedAt) : "—"}/><DetailField label="Disbursed" value={loan.disbursedAt ? formatDate(loan.disbursedAt) : "—"}/><DetailField label="Disbursement transaction" value={loan.disbursement?.transactionId ?? "—"}/><DetailField label="Staff reviewer" value={loan.reviewer ? `${loan.reviewer.name} · ${loan.reviewer.email}` : "—"}/>
+          <div className="sm:col-span-2 lg:col-span-3"><DetailField label="Application description" value={loan.purpose}/></div>
           {loan.reviewNotes && <div className="sm:col-span-2 lg:col-span-3"><DetailField label="Staff review notes" value={loan.reviewNotes}/></div>}
           {loan.rejectionReason && <div className="sm:col-span-2 lg:col-span-3"><DetailField label="Rejection reason" value={loan.rejectionReason}/></div>}
         </dl>
@@ -449,6 +485,8 @@ function LoanDetailsDialog({ loan, mode, onClose, onForward, onApprove, onReject
       </section>}
 
       {mode === "admin" && loan.status === "APPROVED" && <section className="mt-4 rounded-2xl border border-blue-400/20 bg-blue-400/10 p-4 sm:p-5"><div className="flex items-start gap-2"><ShieldCheck size={17} className="mt-0.5 text-blue-200"/><div><h3 className="text-sm font-semibold text-blue-200">Ready for disbursement</h3><p className="mt-1 text-xs text-blue-100">Approved amount: BDT {loan.approvedAmount ?? "Unavailable"} · Linked account: {loan.account?.maskedAccountNumber ?? "Unavailable"} ({loan.account?.status ?? "status unavailable"})</p></div></div>{actionError && <p role="alert" className="mt-3 text-xs text-rose-200">{actionError}</p>}<button type="button" onClick={() => setConfirmAction({ type: "disburse" })} disabled={!loan.approvedAmount || isAdminActionLoading} className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-45">Disburse approved amount</button></section>}
+
+      {(loan.status === "DISBURSED" || loan.status === "PAID") && <LoanSchedule schedule={loan.schedule}/>}
 
       {mode === "admin" && <RepaymentHistory repayments={repaymentHistory?.repayments} isLoading={repaymentHistoryLoading} isError={Boolean(repaymentHistoryError)} error={repaymentHistoryError} onRetry={onRetryRepaymentHistory} page={repaymentHistory?.page ?? 1} total={repaymentHistory?.total ?? 0} totalPages={repaymentHistory?.totalPages ?? 0} onPageChange={(value) => onHistoryPageChange?.(value)} showCustomer/>}
       <div className="mt-4 flex justify-end"><button type="button" onClick={onClose} className="rounded-xl border border-white/[0.08] bg-[#10182b] px-4 py-2.5 text-xs font-semibold text-slate-400">Close details</button></div>
