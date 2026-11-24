@@ -738,3 +738,171 @@ html[data-landing-theme="dark"] .landing-page .preview-panel-menu { border-color
 @media (prefers-reduced-motion: reduce) {
   .landing-theme-toggle { transition: none; }
 }
+
+/* Shared desktop dashboard sidebar: a floating glass panel with a persistent icon rail. */
+@media (min-width: 1024px) {
+  .dashboard-sidebar-drawer {
+    position: sticky;
+    top: 16px;
+    flex: 0 0 264px;
+    width: 264px;
+    height: calc(100vh - 32px);
+    margin: 16px 0 16px 16px;
+    padding: 16px 12px;
+    overflow: hidden;
+    border: 1px solid rgb(178 181 202 / 16%);
+    border-radius: 24px;
+    background: rgb(12 15 32 / 78%);
+    box-shadow: 0 24px 70px rgb(0 0 0 / 28%), inset 0 1px 0 rgb(255 255 255 / 7%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    backdrop-filter: blur(24px) saturate(150%);
+    transition: flex-basis 280ms cubic-bezier(0.22, 1, 0.36, 1), width 280ms cubic-bezier(0.22, 1, 0.36, 1), padding 280ms ease, border-radius 280ms ease, background-color 220ms ease, box-shadow 220ms ease;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed {
+    flex-basis: 84px;
+    width: 84px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .dashboard-sidebar-top {
+    min-height: 44px;
+  }
+
+  .dashboard-sidebar-collapse {
+    flex: 0 0 auto;
+  }
+
+  .dashboard-sidebar-label {
+    min-width: 0;
+    max-width: 190px;
+    opacity: 1;
+    overflow: hidden;
+    transition: opacity 160ms ease, max-width 280ms ease, margin 280ms ease;
+  }
+
+  .dashboard-sidebar-section {
+    max-height: 30px;
+    opacity: 1;
+    overflow: hidden;
+    transition: opacity 140ms ease, max-height 280ms ease, margin 280ms ease;
+  }
+
+  .dashboard-shell-link {
+    min-height: 42px;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, padding 280ms ease, gap 280ms ease;
+  }
+
+  .dashboard-shell-link > svg {
+    flex: 0 0 17px;
+  }
+
+  .dashboard-sidebar-soon {
+    transition: opacity 140ms ease, width 280ms ease;
+  }
+
+  .dashboard-sidebar-profile {
+    flex: 0 0 auto;
+    min-width: 0;
+    transition: padding 280ms ease, margin 280ms ease;
+  }
+
+  .dashboard-sidebar-avatar {
+    display: inline-flex;
+    flex: 0 0 auto;
+    border-radius: 9999px;
+    outline: none;
+  }
+
+  .dashboard-sidebar-avatar:focus-visible {
+    box-shadow: 0 0 0 2px #93c5fd;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-top {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-brand {
+    display: none;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-brand-name,
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-label,
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-section {
+    max-width: 0;
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-collapse {
+    position: absolute;
+    top: 16px;
+    right: 8px;
+    z-index: 1;
+    background: rgb(12 15 32 / 88%);
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-nav {
+    margin-top: 24px;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-shell-link {
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-theme-toggle {
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-shell-link::before {
+    left: -1px;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-soon {
+    width: 0;
+    opacity: 0;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-profile {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-profile > button {
+    margin-top: 8px;
+  }
+}
+
+html[data-theme="light"] .dashboard-sidebar-drawer {
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 24px 70px rgb(34 48 90 / 13%), inset 0 1px 0 rgb(255 255 255 / 92%);
+}
+
+html[data-theme="light"] .dashboard-sidebar-drawer.is-desktop-collapsed .dashboard-sidebar-collapse {
+  background: rgb(255 255 255 / 94%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-sidebar-drawer,
+  .dashboard-sidebar-drawer *,
+  .dashboard-sidebar-drawer *::before,
+  .dashboard-sidebar-drawer *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
