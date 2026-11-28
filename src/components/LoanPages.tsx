@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -210,11 +210,12 @@ function RepaymentHistory({ repayments, isLoading, isError, error, onRetry, page
   </section>;
 }
 
-function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsError }: {
+function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsError, onClose }: {
   loan: LoanRecord;
   accounts: BankAccount[];
   accountsLoading: boolean;
   accountsError: unknown;
+  onClose: () => void;
 }) {
   const [historyPage, setHistoryPage] = useState(1);
   const [sourceAccountId, setSourceAccountId] = useState("");
@@ -235,6 +236,17 @@ function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsErr
   const outstandingPaisa = parseBdtPaisa(loan.outstandingBalance ?? (loan.status === "DISBURSED" ? loan.approvedAmount ?? "" : ""));
   const accountBalancePaisa = sourceAccount ? parseBdtPaisa(sourceAccount.balance) : null;
   const validAmount = amountPaisa !== null && amountPaisa > BigInt("0") && outstandingPaisa !== null && amountPaisa <= outstandingPaisa && accountBalancePaisa !== null && amountPaisa <= accountBalancePaisa;
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !repaymentState.isLoading) {
+        setConfirmation(null);
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [onClose, repaymentState.isLoading]);
 
   async function confirmRepayment() {
     if (!confirmation) return;
@@ -272,9 +284,9 @@ function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsErr
     : 0;
   const historyData = history.data?.data;
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget && !repaymentState.isLoading) setConfirmation(null); }}>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget && !repaymentState.isLoading) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="customer-loan-title" className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-[#f7f9fc] p-4 shadow-2xl sm:p-6">
-      <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Loan details</p><h2 id="customer-loan-title" className="mt-1 break-all font-mono text-lg font-semibold text-slate-100">{loan.loanId}</h2></div><button type="button" onClick={() => setConfirmation(null)} aria-label="Close loan details" className="rounded-lg p-2 text-slate-400 hover:bg-[#10182b]"><X size={18}/></button></div>
+      <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Loan details</p><h2 id="customer-loan-title" className="mt-1 break-all font-mono text-lg font-semibold text-slate-100">{loan.loanId}</h2></div><button type="button" onClick={onClose} aria-label="Close loan details" className="rounded-lg p-2 text-slate-400 hover:bg-[#10182b]"><X size={18}/></button></div>
       <section className="mt-4 rounded-2xl border border-white/[0.08] bg-[#10182b] p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Requested amount</p><p className="mt-1 text-2xl font-semibold text-slate-100">BDT {loan.amount}</p></div><LoanStatusBadge status={loan.status}/></div>
         <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><DetailField label="Loan type" value={loan.loanType ?? "Unavailable for this existing loan"}/><DetailField label="Requested amount" value={`BDT ${loan.amount}`}/><DetailField label="Approved amount" value={loan.approvedAmount ? `BDT ${loan.approvedAmount}` : "Not approved"}/><DetailField label="Disbursed amount" value={loan.disbursedAmount ? `BDT ${loan.disbursedAmount}` : "Not disbursed"}/><DetailField label="Duration" value={`${loan.durationMonths} months`}/><DetailField label="Monthly income" value={loan.monthlyIncome ? `BDT ${loan.monthlyIncome}` : "Unavailable for this existing loan"}/><DetailField label="Employment status" value={loan.employmentStatus?.replaceAll("_", " ") ?? "Unavailable for this existing loan"}/><DetailField label="Application date" value={formatDate(loan.createdAt)}/><DetailField label="Approval date" value={loan.approvedAt ? formatDate(loan.approvedAt) : "Not approved"}/><DetailField label="Rejection reason" value={loan.rejectionReason ?? "—"}/><DetailField label="Disbursement date" value={loan.disbursedAt ? formatDate(loan.disbursedAt) : "Not disbursed"}/><DetailField label="Disbursement transaction" value={loan.disbursement?.transactionId ?? "—"}/><DetailField label="Outstanding balance" value={loan.outstandingBalance !== null ? `BDT ${loan.outstandingBalance}` : "—"}/><DetailField label="Receiving account" value={loan.account?.maskedAccountNumber ?? "Unavailable"}/><div className="sm:col-span-2 lg:col-span-3"><DetailField label="Application description" value={loan.purpose}/></div></dl>
         <div className="mt-5"><div className="flex justify-between text-[10px] text-slate-400"><span>Repayment progress</span><span>{progressPercent.toFixed(2)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.07]"><div className="h-full rounded-full bg-emerald-400/100 transition-all" style={{ width: `${Math.min(progressPercent, 100)}%` }}/></div><p className="mt-1 text-[10px] text-slate-400">Paid BDT {formatBdtPaisa(paidPaisa)} of BDT {formatBdtPaisa(requestedPaisa ?? BigInt("0"))}</p></div>
@@ -293,7 +305,7 @@ function CustomerLoanDetailDialog({ loan, accounts, accountsLoading, accountsErr
 
       {(loan.status === "DISBURSED" || loan.status === "PAID") && <LoanSchedule schedule={loan.schedule}/>}
       {canShowHistory && <RepaymentHistory repayments={historyData?.repayments} isLoading={history.isLoading} isError={history.isError} error={history.error} onRetry={() => void history.refetch()} page={historyData?.page ?? historyPage} total={historyData?.total ?? 0} totalPages={historyData?.totalPages ?? 0} onPageChange={setHistoryPage}/>}
-      <div className="mt-4 flex justify-end"><button type="button" onClick={() => setConfirmation(null)} className="rounded-xl border border-white/[0.08] bg-[#10182b] px-4 py-2.5 text-xs font-semibold text-slate-400">Close</button></div>
+      <div className="mt-4 flex justify-end"><button type="button" onClick={onClose} className="rounded-xl border border-white/[0.08] bg-[#10182b] px-4 py-2.5 text-xs font-semibold text-slate-400">Close</button></div>
       {confirmation && <ConfirmDialog title="Confirm loan repayment" description={`Pay BDT ${confirmation.amount} from ${sourceAccount?.accountNumber ?? "the selected account"} toward loan ${loan.loanId}? Outstanding balance: BDT ${loan.outstandingBalance ?? loan.approvedAmount ?? "—"}.`} confirmLabel={feedbackError ? "Retry same request" : "Confirm repayment"} isLoading={repaymentState.isLoading} error={feedbackError ? feedback : undefined} onConfirm={() => void confirmRepayment()} onCancel={() => setConfirmation(null)}/>}
     </section>
   </div>;
@@ -381,7 +393,7 @@ export function CustomerLoansPage() {
       </section>
     </div>
     {selectedId && (detail.data?.data.loan
-      ? <CustomerLoanDetailDialog key={selectedId} loan={detail.data.data.loan} accounts={accounts} accountsLoading={accountsLoading} accountsError={accountsError ? accountsErrorValue : undefined}/>
+      ? <CustomerLoanDetailDialog key={selectedId} loan={detail.data.data.loan} accounts={accounts} accountsLoading={accountsLoading} accountsError={accountsError ? accountsErrorValue : undefined} onClose={() => setSelectedId("")}/>
       : detail.isError
         ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4"><section role="alertdialog" className="w-full max-w-sm rounded-2xl bg-[#10182b] p-5"><div className="flex justify-between"><h2 className="font-semibold text-slate-200">Loan details unavailable</h2><button type="button" aria-label="Close" onClick={() => setSelectedId("")}><X size={18}/></button></div><p role="alert" className="mt-3 text-sm text-rose-200">{apiMessage(detail.error, "Could not load loan details.")}</p></section></div>
         : <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4"><section role="status" className="rounded-2xl bg-[#10182b] px-8 py-6 text-sm text-slate-400">Loading loan details…</section></div>)}
