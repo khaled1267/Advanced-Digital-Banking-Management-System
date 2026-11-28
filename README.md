@@ -365,6 +365,7 @@ Create a local `.env.local` file in the project root. Never commit real credenti
 |---|:---:|---|
 | `MONGODB_URI` | Yes | MongoDB connection URI. Keep credentials private. |
 | `MONGODB_DATABASE` | Yes | Application database name; development has used `banking_management`. |
+| `MONGODB_DEMO_URI` | For demo seeding | Separate MongoDB connection reserved for demo data; the seed command never uses `MONGODB_URI`. |
 | `JWT_SECRET` | Yes | Strong, private secret used by the authentication implementation. |
 | `MONGODB_TEST_DATABASE` | For integration tests | Dedicated test database; development has used `banking_management_task26_test`. |
 | `RUN_DB_INTEGRATION_TESTS` | Optional | Set to `true` to opt in to database-backed tests; those tests also require a dedicated test database name. |
@@ -377,6 +378,8 @@ Example template (replace placeholders with your own values):
 ```env
 MONGODB_URI="mongodb+srv://<username>:<password>@<cluster-host>/"
 MONGODB_DATABASE="banking_management"
+# Configure only for demo seeding, using a demo-only MongoDB deployment.
+MONGODB_DEMO_URI="mongodb+srv://<demo-user>:<demo-password>@<demo-cluster-host>/"
 MONGODB_TEST_DATABASE="banking_management_task26_test"
 RUN_DB_INTEGRATION_TESTS="false"
 JWT_SECRET="<generate-a-long-random-secret>"
@@ -524,15 +527,38 @@ Use a Preview Deployment for initial verification. Do not test financial operati
 
 ## Demo Credentials
 
-**No verified demo usernames or passwords were supplied for this project at the time this README was prepared.** Credentials are intentionally not fabricated or committed to source control.
-
-Create dedicated test users in a non-production environment and fill in this table before publishing the README or sharing the application with reviewers.
+These public demo credentials are for the dedicated `banking_management_demo` database only. They are not production credentials and must never be reused for real accounts.
 
 | Role | Demo Email | Demo Password | Provisioning |
 |---|---|---|---|
-| Admin | `ADD_ADMIN_DEMO_EMAIL` | `ADD_ADMIN_DEMO_PASSWORD` | Create through the project's approved Admin provisioning/seed process. Do not make a public self-registration flow grant Admin privileges. |
-| Staff | `ADD_STAFF_DEMO_EMAIL` | `ADD_STAFF_DEMO_PASSWORD` | Create through the approved Admin/Staff provisioning process. |
-| Customer | `ADD_CUSTOMER_DEMO_EMAIL` | `ADD_CUSTOMER_DEMO_PASSWORD` | Register a dedicated demo Customer or create one using the approved development seed process. |
+| Admin | `admin.demo@northstar.test` | `Demo-Admin-2026-Northstar!` | `npm run seed:demo` |
+| Bank Staff | `staff.demo@northstar.test` | `Demo-Staff-2026-Northstar!` | `npm run seed:demo` |
+| Customer | `customer.demo@northstar.test` | `Demo-Customer-2026-Northstar!` | `npm run seed:demo` |
+
+### Create or verify the demo accounts
+
+1. Configure `MONGODB_DEMO_URI` with credentials for a MongoDB deployment reserved for demo data. Do not point it at a production deployment. When you run the app to log in, configure its `MONGODB_URI` and `MONGODB_DATABASE` to use that same demo deployment and database.
+2. From the project root, select the dedicated database and explicitly confirm the seed. The script uses only `MONGODB_DEMO_URI` and rejects production mode, any database name other than `banking_management_demo`, and any run without the confirmation value.
+
+PowerShell:
+
+```powershell
+$env:MONGODB_DATABASE = "banking_management_demo"
+$env:MONGODB_DEMO_URI = "<demo-only MongoDB connection URI>"
+$env:DEMO_SEED_CONFIRMATION = "CREATE_NORTHSTAR_DEMO_ACCOUNTS"
+npm.cmd run seed:demo
+Remove-Item Env:DEMO_SEED_CONFIRMATION
+```
+
+Bash:
+
+```bash
+MONGODB_DATABASE=banking_management_demo MONGODB_DEMO_URI="<demo-only MongoDB connection URI>" DEMO_SEED_CONFIRMATION=CREATE_NORTHSTAR_DEMO_ACCOUNTS npm run seed:demo
+```
+
+The command only creates missing demo identities. It checks every existing demo email before writing; a conflicting record or password stops the run without changing existing records. Passwords are stored as Argon2id hashes. After seeding, start the application against the same dedicated database and sign in at `/login` with each row above. The Admin, Staff, and Customer roles are returned by the normal login flow and control access through the existing server-side authorization checks.
+
+Do not publish these credentials as access to a live deployment. Anyone who can see this README can use the demo accounts in the dedicated demo database.
 
 **Before sharing demo access:**
 
