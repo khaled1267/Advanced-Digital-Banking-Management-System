@@ -5,11 +5,12 @@ import { loadEnvConfig } from "@next/env";
 import { NextRequest } from "next/server";
 import { GET as pinStatus, POST as setPin } from "../src/app/api/v1/profile/transaction-pin/route";
 import { GET as getProfile } from "../src/app/api/v1/profile/route";
+import { POST as login } from "../src/app/api/v1/auth/login/route";
 import { POST as transfer } from "../src/app/api/v1/transfers/route";
 import { PATCH as updateLimits } from "../src/app/api/v1/admin/accounts/[id]/limits/route";
 import { AUTH_COOKIE_NAME, createSessionToken } from "../src/lib/session";
 import { connectToDatabase } from "../src/lib/mongodb";
-import { hashPassword } from "../src/lib/password";
+import { hashPassword, verifyPassword } from "../src/lib/password";
 import { verifyCustomerTransactionPin, TRANSACTION_PIN_MAX_FAILED_ATTEMPTS } from "../src/lib/transaction-pin";
 import { createTransferSchema } from "../src/lib/validation/transfer";
 import { transactionPinUpdateSchema } from "../src/lib/validation/profile";
@@ -121,6 +122,7 @@ test("PIN verification, transfer limits, minimum balance and withdrawal approval
 
     const invalidPassword = await setPin(request("/profile/transaction-pin", "POST", customerToken, { newPin: "001234", confirmPin: "001234", currentPassword: "incorrect" }));
     assert.equal(invalidPassword.status, 400);
+    assert.equal((await User.findById(customer.id).select("+transactionPinHash"))?.transactionPinHash, undefined);
     const configured = await setPin(request("/profile/transaction-pin", "POST", customerToken, { newPin: "001234", confirmPin: "001234", currentPassword: password }));
     assert.equal(configured.status, 200);
     assert.deepEqual((await configured.json()).data, { configured: true });
@@ -128,6 +130,8 @@ test("PIN verification, transfer limits, minimum balance and withdrawal approval
     assert.ok(savedUser?.transactionPinHash);
     assert.notEqual(savedUser?.transactionPinHash, "001234");
     assert.equal(savedUser?.passwordHash, passwordHash);
+    assert.equal(await verifyPassword(password, savedUser!.passwordHash), true);
+    assert.equal((await login(request("/auth/login", "POST", undefined, { email: customer.email, password }))).status, 200);
     const profileStatus = await pinStatus(request("/profile/transaction-pin", "GET", customerToken));
     const profileStatusPayload = await profileStatus.json();
     assert.deepEqual(profileStatusPayload.data, { configured: true });
@@ -200,14 +204,18 @@ test("PIN verification, transfer limits, minimum balance and withdrawal approval
     assert.equal((await BankAccount.findById(source.id).lean())?.balance.toString(), "900.00");
     assert.equal((await Withdrawal.findById(withdrawal.id).lean())?.status, "PENDING");
 
-    // One failed attempt above plus the remaining attempts reaches the account limit.
-    for (let index = 0; index < TRANSACTION_PIN_MAX_FAILED_ATTEMPTS - 1; index += 1) {
+    for (let index = 0; index < TRANSACTION_PIN_MAX_FAILED_ATTEMPTS; index += 1) {
       assert.equal(await verifyCustomerTransactionPin(customer._id, "999999"), "INVALID");
     }
     assert.equal(await verifyCustomerTransactionPin(customer._id, "001234"), "RATE_LIMITED");
     const changed = await setPin(request("/profile/transaction-pin", "POST", customerToken, { newPin: "000987", confirmPin: "000987", currentPassword: password }));
     assert.equal(changed.status, 200);
+    assert.equal(await verifyCustomerTransactionPin(customer._id, "001234"), "INVALID");
     assert.equal(await verifyCustomerTransactionPin(customer._id, "000987"), "OK");
+    const updatedUser = await User.findById(customer.id).select("+passwordHash");
+    assert.equal(updatedUser?.passwordHash, passwordHash);
+    assert.equal(await verifyPassword(password, updatedUser!.passwordHash), true);
+    assert.equal((await login(request("/auth/login", "POST", undefined, { email: customer.email, password }))).status, 200);
   } finally {
     await Promise.all([
       Transaction.deleteMany({ _id: { $in: createdTransactions } }),
